@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.2.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -26,7 +26,7 @@ const fdE = d => esc(fd(d));
 let DB = null;          // base en memoria (fuente de verdad local)
 let CFG = null;         // {url, key, onboarded, last}
 const UI = {
-  view: 'inicio', stSeg: 'stock', stQ: '', mvMonth: '', mvF: 'todos', masSeg: 'analisis', anMonth: '',
+  view: 'inicio', stSeg: 'stock', stQ: '', mvMonth: '', mvF: 'todos', mvFondo: '', masSeg: 'analisis', dnSeg: 'donde', anMonth: '',
   sync: 'off', syncMsg: '', rev: 0, onb: '', chart: null, pendAll: false, pendOpen: Object.create(null)
 };
 
@@ -133,7 +133,7 @@ async function sync(manual){
   try {
     const j = await cloudFetch(CFG.url, {method: 'POST', body: JSON.stringify({action: 'sync', key: CFG.key, db: DB})});
     if(!j.db || typeof j.db !== 'object') throw new Error('La nube no devolvió los datos.');
-    DB = mergeDB(DB, j.db);
+    DB = ensureSeeds(mergeDB(DB, j.db));      // §13.2: semillas que falten (Nequi pareja, apartados), sin duplicar
     saveDB();
     CFG.last = Date.now(); saveCfg();
     ok = true;
@@ -190,6 +190,30 @@ const pocketUsed = id => ['items','gastos','ingresos','cobros','abonos','transfe
   r.buyPocket === id || (r.status === 'sold' && r.sellPocket === id) || r.bolsillo === id || r.from === id || r.to === id));
 const hasData = () => pockets().some(b => +b.u > 1) ||
   ['items','gastos','ingresos','cobros','abonos','transfers','ajustes'].some(c => (DB[c] || []).length);
+
+/* ── Apartados (fondos): PARA QUÉ es la plata (§13). Bolsillo = DÓNDE está. ── */
+const fondos = () => fondosOrdenados(DB);
+const fondoValid = id => !!id && fondos().some(f => f.id === id);
+/* "💼 Negocio" (también para apartados borrados, para que el historial se lea bien) */
+const fnName = id => {
+  const f = (DB.fondos || []).find(x => x.id === id);
+  if(f) return (f.emoji ? f.emoji + ' ' : '') + (f.nombre || id);
+  return id === 'personal' ? '👤 Personal' : id === 'negocio' ? '💼 Negocio' : String(id || '—');
+};
+const fondoOpts = withSaldo => { const bf = withSaldo ? balancesFondos(DB) : null; return fondos().map(f => [f.id, fnName(f.id) + (bf ? ' · ' + fmt(bf[f.id] || 0) : '')]); };
+const otherFondo = id => { const fs = fondos(); const p = fs.find(f => f.id === 'personal'); if(p && p.id !== id) return p.id; const o = fs.find(f => f.id !== id); return o ? o.id : id; };
+const sumObj = o => Object.keys(o).reduce((a, k) => a + (+o[k] || 0), 0);
+/* resolvedor rápido (core.fondoResolver arma sus índices una sola vez) */
+const fondoRes = () => typeof fondoResolver === 'function' ? fondoResolver(DB) : (c, r) => fondoDe(c, r, DB);
+const FONDO_BASE = ['negocio', 'personal'];
+/* ¿algún registro nombra este apartado? (los de base se resuelven por defecto y nunca se borran) */
+const fondoUsed = id => ['items','gastos','ingresos','cobros','abonos','ajustes'].some(c => L(DB, c).some(r => r.fondo === id)) ||
+  L(DB, 'repartos').some(r => r.from === id || r.to === id) ||
+  pockets().some(p => p.iniFondos && +p.iniFondos[id]);
+/* bolsillos digitales (para los enlaces de captura de MacroDroid) */
+const digitalPockets = () => pockets().filter(p => p.id !== 'efectivo' && !/efectivo|cash|caja|alcanc|billete/i.test(normKey(p.nombre)));
+/* "nequi, mi nequi, neki" → ['nequi','mi nequi','neki'] (sin tildes ni repetidos) */
+const parseAlias = s => Array.from(new Set(String(s || '').split(/[,;\n]+/).map(a => normKey(a)).filter(Boolean))).slice(0, 20);
 
 /* ═════════ 2. PANTALLAS ═════════ */
 const VIEWS = ['inicio', 'stock', 'movs', 'cobros', 'mas'];
@@ -257,11 +281,17 @@ function movs(){
     fecha: c.fecha, u: c.u, m: -((+c.total || 0) - (+c.pagado || 0)), pocket: c.bolsillo}); });
   L(DB, 'transfers').forEach(t => rows.push({col: 'transfers', id: t.id, ico: '🔁', t: pn(t.from) + ' → ' + pn(t.to), s: 'Mover', f: 'bolsillos', fecha: t.fecha, u: t.u, m: null, amt: +t.monto || 0}));
   L(DB, 'ajustes').forEach(a => rows.push({col: 'ajustes', id: a.id, ico: '⚖️', t: a.nota || 'Ajuste de saldo', s: 'Ajuste', f: 'bolsillos', fecha: a.fecha, u: a.u, m: +a.delta || 0, pocket: a.bolsillo}));
+  L(DB, 'repartos').forEach(r => rows.push({col: 'repartos', id: r.id, ico: '🔀', t: fnName(r.from) + ' → ' + fnName(r.to), s: r.nota ? 'Reparto · ' + r.nota : 'Reparto',
+    f: 'bolsillos', fecha: r.fecha, u: r.u, m: null, amt: +r.monto || 0, from: r.from, to: r.to}));
+  /* apartado de cada fila (§13.4: filtro por apartado); fx = el que eligió el usuario a mano */
+  const fr = fondoRes(), byId = {};
+  ['items','gastos','ingresos','cobros','abonos','ajustes'].forEach(c => L(DB, c).forEach(x => byId[c + ':' + x.id] = x));
+  rows.forEach(r => { const x = byId[r.col + ':' + r.id]; if(x){ r.fondo = fr(r.col, x); if(x.fondo) r.fx = r.fondo; } });
   return rows.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')) || (+b.u || 0) - (+a.u || 0));
 }
 
 function rowHTML(r){
-  const sub = [r.s, fd(r.fecha), r.pocket ? pn(r.pocket) : '', r.extra || ''].filter(Boolean).join(' · ');
+  const sub = [r.s, fd(r.fecha), r.pocket ? pn(r.pocket) : '', r.fx ? fnName(r.fx) : '', r.extra || ''].filter(Boolean).join(' · ');
   return `<button type="button" class="row" data-a="mov" data-col="${r.col}" data-id="${esc(r.id)}" data-kind="${r.kind || ''}">
     <span class="ico">${r.ico}</span>
     <span class="rmain"><span class="rt" style="display:block">${esc(r.t)}</span><span class="rs" style="display:block">${esc(sub)}</span></span>
@@ -270,6 +300,10 @@ function rowHTML(r){
 
 /* ── Inicio ── */
 const QUICK_EX = ['almuerzo 18 mil', 'compré ps5 1.2M nequi', 'vendí ps5 1.5M efectivo', 'envío 12k nequi', 'juan me debe 200k', 'juan abonó 50k nequi', 'retiré 100k nequi', 'sueldo 1.3M nequi'];
+
+/* Tarjeta "Organiza tu plata" (§13.4): hay datos, plata en caja y todavía no hay repartos ni saldo inicial repartido */
+const showOrganizar = caja => !CFG.fondosIntro && caja > 0 && hasData() && fondoValid('negocio') && fondoValid('personal') &&
+  !L(DB, 'repartos').length && !pockets().some(p => p.iniFondos && Object.keys(p.iniFondos).some(k => +p.iniFondos[k]));
 
 function renderInicio(){
   const ex = $('#qEx');
@@ -324,8 +358,20 @@ function renderInicio(){
     <small>${esc(p.nombre)}</small><b class="${(bal[p.id] || 0) < 0 ? 'neg' : ''}">${full(bal[p.id] || 0)}</b></button>`).join('')}
     <button type="button" class="pock" data-a="nuevoBolsillo"><small>Nuevo</small><b>＋</b></button></div>`;
 
+  /* apartados (§13.4): para qué es la plata; tocar → Repartir */
+  const bf = balancesFondos(DB);
+  h += `<div class="pocks fons" data-testid="fondo-chips">${fondos().map(f => `<button type="button" class="pock fon" data-a="repartir" data-fondo="${esc(f.id)}" data-testid="fondo-chip" title="Repartir">
+    <small>${esc(fnName(f.id))}</small><b class="${(bf[f.id] || 0) < 0 ? 'neg' : ''}">${full(bf[f.id] || 0)}</b></button>`).join('')}
+    <button type="button" class="pock fon" data-a="goDinero"><small>Apartados</small><b>›</b></button></div>`;
+
+  /* primera vez con apartados: ¿cuánto es del negocio? (descartable) */
+  if(showOrganizar(caja)) h += `<div class="alert" style="--ac:var(--P)" data-testid="organizar"><div class="alert-t">🎯 Organiza tu plata en apartados</div>
+    <div class="meta">Ahora la app separa <b>dónde</b> está tu plata (Nequi, efectivo…) de <b>para qué</b> es (💼 negocio, 👤 personal, 🏠 arriendo…). ¿Cuánto de lo que tienes hoy es capital del negocio?</div>
+    <div class="pbtns"><button type="button" class="btn b-b" data-a="form" data-k="organizar" data-testid="organizar-go">Organizar</button>
+    <button type="button" class="btn b-gh mut" data-a="organizarNo">Ahora no</button></div></div>`;
+
   /* acciones rápidas */
-  const A = [['compra', '🛒', 'Compré'], ['venta', '💰', 'Vendí'], ['gasto', '💸', 'Gasto'], ['ingreso', '➕', 'Ingreso'], ['cobro', '🤝', 'Me deben'], ['abono', '💵', 'Abono'], ['transfer', '🔁', 'Mover']];
+  const A = [['compra', '🛒', 'Compré'], ['venta', '💰', 'Vendí'], ['gasto', '💸', 'Gasto'], ['ingreso', '➕', 'Ingreso'], ['cobro', '🤝', 'Me deben'], ['abono', '💵', 'Abono'], ['transfer', '🔁', 'Mover'], ['reparto', '🔀', 'Repartir']];
   h += `<div class="acts">${A.map(([k, i, l]) => `<button type="button" class="act" data-a="form" data-k="${k}" data-testid="act-${k}"><span>${i}</span>${l}</button>`).join('')}
     <button type="button" class="act" data-a="voz"><span>🎤</span>Dictar</button></div>`;
 
@@ -433,7 +479,17 @@ function renderMovs(){
   $('#mvMonth').textContent = ymLabel(ym);
   $('#mvNext').disabled = ym >= today().slice(0, 7);
   $$('#mvFil button').forEach(b => b.classList.toggle('on', b.dataset.f === UI.mvF));
-  const all = movs().filter(r => String(r.fecha || '').slice(0, 7) === ym);
+  /* filtro por apartado (§13.4): los repartos cuentan con signo para ese apartado; los traslados entre bolsillos no tienen apartado */
+  const sel = $('#mvFondo'), fs = fondos();
+  if(UI.mvFondo && !fs.some(f => f.id === UI.mvFondo)) UI.mvFondo = '';
+  if(sel){
+    sel.innerHTML = `<option value="">🎯 Todos los apartados</option>` + fs.map(f => `<option value="${esc(f.id)}">${esc(fnName(f.id))}</option>`).join('');
+    sel.value = UI.mvFondo;
+  }
+  const fo = UI.mvFondo;
+  const all = movs().filter(r => String(r.fecha || '').slice(0, 7) === ym)
+    .filter(r => !fo || r.fondo === fo || (r.col === 'repartos' && (r.from === fo || r.to === fo)))
+    .map(r => fo && r.col === 'repartos' ? Object.assign({}, r, {m: r.to === fo ? r.amt : -r.amt}) : r);
   const rows = UI.mvF === 'todos' ? all : all.filter(r => r.f === UI.mvF);
   const entro = rows.reduce((a, r) => a + (r.m > 0 ? r.m : 0), 0), salio = rows.reduce((a, r) => a + (r.m < 0 ? -r.m : 0), 0);
   let h = `<div class="tot">
@@ -480,7 +536,7 @@ function renderMas(){
   $$('#masSeg button').forEach(b => b.classList.toggle('on', b.dataset.seg === UI.masSeg));
   $$('#v-mas [data-mas]').forEach(d => { d.hidden = d.dataset.mas !== UI.masSeg; });
   if(UI.masSeg === 'analisis') renderAnalisis();
-  else if(UI.masSeg === 'bolsillos') renderBolsillos();
+  else if(UI.masSeg === 'dinero') renderDinero();
   else renderAjustes();
 }
 
@@ -548,18 +604,71 @@ function renderAnalisis(){
   $('#anBody').innerHTML = h;
 }
 
+/* ── Más → Dinero (§13.4): ¿Dónde está? (bolsillos) · ¿Para qué es? (apartados) + chequeo de cuadre ── */
+function renderDinero(){
+  if(UI.dnSeg !== 'para') UI.dnSeg = 'donde';
+  $$('#dnSeg button').forEach(b => b.classList.toggle('on', b.dataset.seg === UI.dnSeg));
+  $('#bolBody').hidden = UI.dnSeg !== 'donde';
+  $('#fonBody').hidden = UI.dnSeg !== 'para';
+  renderCuadre();
+  if(UI.dnSeg === 'donde') renderBolsillos(); else renderFondos();
+}
+
+/* "Total en bolsillos $X = Total en apartados $X ✅" — si no cuadra (no debería) ⚠️ + Reportar */
+function renderCuadre(){
+  const tb = sumObj(balances(DB)), tf = sumObj(balancesFondos(DB)), ok = tb === tf;
+  $('#dnCheck').innerHTML = `<div class="cuadre ${ok ? 'ok' : 'bad'}" data-testid="cuadre" data-ok="${ok ? 1 : 0}">
+    <div class="cq"><small>Total en bolsillos</small><b data-testid="total-bolsillos">${full(tb)}</b></div><span class="eqs">${ok ? '=' : '≠'}</span>
+    <div class="cq"><small>Total en apartados</small><b data-testid="total-apartados">${full(tf)}</b></div>
+    <span class="ck" aria-label="${ok ? 'Cuadra' : 'No cuadra'}">${ok ? '✅' : '⚠️'}</span></div>
+    ${ok ? '<p class="hint" style="margin:-4px 0 12px">Cada peso está en un bolsillo y tiene un para qué. Si los dos totales son iguales, tus cuentas cuadran.</p>'
+      : `<div class="alert" style="--ac:var(--R)"><div class="alert-t">⚠️ No cuadra por ${full(tb - tf)}</div><div class="meta">Esto no debería pasar. Copia el reporte y envíaselo a quien te ayuda con la app.</div>
+        <div class="pbtns"><button type="button" class="btn b-r wide" data-a="reportarCuadre" data-testid="cuadre-reportar">📋 Copiar reporte</button></div></div>`}`;
+}
+
 function renderBolsillos(){
-  const bal = balances(DB), ps = pockets(), tot = ps.reduce((a, p) => a + (bal[p.id] || 0), 0);
-  let h = `<div class="card a-g" style="margin-bottom:12px"><div class="lbl">Total en bolsillos</div><div class="val">${full(tot)}</div></div>`;
-  h += ps.map(p => `<div class="it" data-testid="bolsillo" data-id="${esc(p.id)}"><div class="it-h"><div class="it-n">${esc(p.nombre)}</div>
+  const bal = balances(DB), ps = pockets();
+  let h = ps.map(p => `<div class="it" data-testid="bolsillo" data-id="${esc(p.id)}"><div class="it-h"><div style="min-width:0"><div class="it-n">${esc(p.nombre)}</div>
+    ${(p.alias || []).length ? `<div class="meta">Lo reconozco como: ${esc(p.alias.slice(0, 5).join(', '))}${p.alias.length > 5 ? '…' : ''}</div>` : ''}</div>
     <div class="alert-m ${(bal[p.id] || 0) < 0 ? 'neg' : ''}">${full(bal[p.id] || 0)}</div></div>
     <div class="btns"><button type="button" class="btn b-gh" data-a="ajustar" data-id="${esc(p.id)}">⚖️ Ajustar saldo</button>
-    <button type="button" class="ibtn" data-a="renombrar" data-id="${esc(p.id)}" aria-label="Renombrar">✏️</button>
+    <button type="button" class="ibtn" data-a="renombrar" data-id="${esc(p.id)}" aria-label="Editar nombre y alias">✏️</button>
     ${pocketUsed(p.id) ? '' : `<button type="button" class="ibtn" data-a="delBolsillo" data-id="${esc(p.id)}" aria-label="Eliminar">🗑️</button>`}</div></div>`).join('');
   h += `<div class="btns" style="margin-bottom:12px"><button type="button" class="btn b-g" data-a="nuevoBolsillo">+ Nuevo bolsillo</button>
     <button type="button" class="btn b-b" data-a="form" data-k="transfer">🔁 Mover entre bolsillos</button></div>
-    <p class="hint">El saldo se calcula solo con lo que registras; si no cuadra con Nequi, usa <b>Ajustar</b>. Solo puedes eliminar un bolsillo sin movimientos.</p>`;
+    <p class="hint">El saldo se calcula solo con lo que registras; si no cuadra con Nequi, usa <b>Ajustar</b>. Solo puedes eliminar un bolsillo sin movimientos.
+    Con ✏️ cambias su nombre y las palabras con que lo nombras al escribir (“el nequi de mi pareja”).</p>`;
   $('#bolBody').innerHTML = h;
+}
+
+/* por qué un apartado está en negativo, en palabras */
+function fondoNegTxt(f, x, bf){
+  const otros = id => (bf[id] || 0) >= x;
+  if(f.id === 'negocio') return `El negocio está usando ${full(x)} de ${otros('personal') ? 'tu plata personal' : 'la plata de tus otros apartados'}. Se repone cuando vendas, o pásale plata con Repartir.`;
+  if(f.id === 'personal') return `Estás usando ${full(x)} de ${otros('negocio') ? 'la plata del negocio' : 'tus otros apartados'} para lo personal. Repártele de vuelta cuando puedas.`;
+  return `${f.nombre} gastó ${full(x)} más de lo que le apartaste: lo está cubriendo tu otra plata. Repártele para cuadrarlo.`;
+}
+
+function renderFondos(){
+  const bf = balancesFondos(DB), fs = fondos();
+  let h = fs.map(f => {
+    const s = bf[f.id] || 0, meta = +f.meta || 0;
+    const pct = meta > 0 ? Math.max(0, Math.min(100, Math.round(s / meta * 100))) : 0;
+    const borrable = !FONDO_BASE.includes(f.id) && !s && !fondoUsed(f.id);
+    return `<div class="it" data-testid="fondo" data-id="${esc(f.id)}"><div class="it-h"><div style="min-width:0"><div class="it-n">${esc(fnName(f.id))}</div>
+      ${(f.alias || []).length ? `<div class="meta">Lo reconozco como: ${esc(f.alias.slice(0, 5).join(', '))}${f.alias.length > 5 ? '…' : ''}</div>` : ''}</div>
+      <div class="alert-m ${s < 0 ? 'neg' : ''}" data-testid="fondo-saldo">${full(s)}</div></div>
+      ${meta > 0 ? `<div class="bar"><i style="width:${pct}%"></i></div><div class="meta" style="margin-top:4px">${s >= meta ? '🎉 ¡Meta cumplida!' : `Meta ${full(meta)} · vas en ${pct}% · faltan ${full(meta - Math.max(0, s))}`}</div>` : ''}
+      ${s < 0 ? `<div class="negx" data-testid="fondo-neg">⚠️ ${esc(fondoNegTxt(f, -s, bf))}</div>` : ''}
+      <div class="btns"><button type="button" class="btn b-gh" data-a="repartir" data-fondo="${esc(f.id)}">🔀 Repartir</button>
+      <button type="button" class="ibtn" data-a="editFondo" data-id="${esc(f.id)}" aria-label="Editar apartado">✏️</button>
+      ${borrable ? `<button type="button" class="ibtn" data-a="delFondo" data-id="${esc(f.id)}" aria-label="Eliminar apartado">🗑️</button>` : ''}</div></div>`;
+  }).join('');
+  h += `<div class="btns" style="margin-bottom:12px"><button type="button" class="btn b-g" data-a="nuevoFondo" data-testid="fondo-nuevo">+ Nuevo apartado</button>
+    <button type="button" class="btn b-b" data-a="form" data-k="reparto">🔀 Repartir</button></div>
+    <p class="hint">Un apartado dice <b>para qué</b> es la plata, no dónde está. Compras y ventas van a <b>💼 Negocio</b>; gastos personales e ingresos a <b>👤 Personal</b>.
+    En cada formulario lo cambias con <b>“Plata de:”</b>. Repartir mueve plata entre apartados sin sacarla del bolsillo. Solo puedes eliminar un apartado en $0 y sin movimientos.</p>`;
+  $('#fonBody').innerHTML = h;
 }
 
 /* ═════════ 3. FORMULARIOS (motor genérico + tipos) ═════════ */
@@ -582,7 +691,11 @@ function fieldHTML(f){
       <span class="eq" data-eq="${f.k}"></span>`;
   } else if(f.type === 'date'){
     inp = `<input class="in" ${common} type="date" value="${esc(val)}">`;
-  } else if(f.type === 'select' || (f.type === 'seg' && opts.length > 5)){
+  } else if(f.type === 'fondo'){                      // §13.4: chip compacto "Plata de: 💼 Negocio ▾"
+    inp = `<div class="fchip" ${common} data-k="${f.k}"><button type="button" class="fchip-b" data-fondo-toggle aria-expanded="false" data-testid="${id}-chip">Plata de: <b>${esc(fnName(val))}</b> <span aria-hidden="true">▾</span></button>
+      <div class="opts" data-k="${f.k}" hidden>${opts.map(([o, l]) =>
+      `<button type="button" class="${String(o) === String(val) ? 'on' : ''}" data-v="${esc(o)}" data-testid="${id}-${esc(o)}">${esc(l)}</button>`).join('')}</div></div>`;
+  } else if(f.type === 'select' || (f.type === 'seg' && opts.length > 5 && !f.chips)){
     inp = `<select class="in" ${common}>${opts.map(([o, l]) => `<option value="${esc(o)}"${String(o) === String(val) ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   } else if(f.type === 'seg'){
     inp = `<div class="opts" ${common} data-k="${f.k}" role="radiogroup">${opts.map(([o, l]) =>
@@ -600,15 +713,24 @@ function fieldHTML(f){
 function openForm(kind, d, opts){
   const spec = FORMS[kind];
   if(!spec) return;
+  opts = opts || {};
   d = Object.assign({}, d || {});
+  if(d.fondo != null && !fondoValid(d.fondo)) delete d.fondo;      // apartado del parser/registro que ya no existe → por defecto
   if(spec.prep) spec.prep(d);
   const fields = spec.fields(d);
   const v = {};
   fields.forEach(f => { let x = d[f.k]; if(x === undefined || x === null) x = f.val !== undefined ? f.val : ''; v[f.k] = x; });
-  F = {kind, spec, d, v, fields, touched: {}, fromQuick: !!(opts && opts.fromQuick), lote: opts && opts.lote != null ? opts.lote : null};
+  const fondoFixed = !!d.fondo;
+  if(fields.some(f => f.k === 'fondo')) v.fondo = fondoFixed ? d.fondo : fondoAuto(kind, v, d);
+  const fromQuick = !!opts.fromQuick, lote = opts.lote != null ? opts.lote : null;
+  F = {kind, spec, d, v, fields, touched: {}, fromQuick, lote, fondoFixed,
+    parsed: opts.parsed || null, qtext: opts.qtext || '', v0: Object.assign({}, v)};
   SHEET = 'form';
   $('#sheetTitle').textContent = typeof spec.title === 'function' ? spec.title(d) : spec.title;
-  $('#sheetBody').innerHTML = (spec.intro ? spec.intro(d) : '') + fields.map(fieldHTML).join('');
+  const ks = fromQuick && lote == null && !d._pend && KSWITCH.some(x => x[0] === kind)
+    ? `<div class="kswitch" data-testid="kswitch"><span>¿Es otra cosa?</span>${KSWITCH.filter(x => x[0] !== kind).map(([k, i, l]) =>
+      `<button type="button" class="chip" data-a="kswitch" data-k="${k}" data-testid="kswitch-${k}">${i} ${esc(l)}</button>`).join('')}</div>` : '';
+  $('#sheetBody').innerHTML = ks + (spec.intro ? spec.intro(d) : '') + fields.map(fieldHTML).join('');
   $('#sheetFoot').innerHTML = (spec.del && d.id ? '<button type="button" class="btn b-r" data-a="formDel" data-testid="form-del">🗑️</button>' : '') +
     (spec.extra ? spec.extra(d) : '') +
     (spec.extra && spec.extra(d) ? '' : '<button type="button" class="btn b-gh" data-a="formClose" data-testid="form-cancel">Cancelar</button>') +
@@ -654,7 +776,11 @@ function setVal(k, val){
   F.v[k] = val;
   const el = $('#f-' + k);
   if(!el) return;
-  if(el.classList.contains('opts')) $$('button', el).forEach(b => { const on = b.dataset.v === String(val); b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+  if(el.classList.contains('fchip')){
+    $$('.opts button', el).forEach(b => b.classList.toggle('on', b.dataset.v === String(val)));
+    const lb = $('.fchip-b b', el); if(lb) lb.textContent = fnName(val);
+  }
+  else if(el.classList.contains('opts')) $$('button', el).forEach(b => { const on = b.dataset.v === String(val); b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
   else if(el.classList.contains('money')){ el.value = val === '' || val == null ? '' : miles(val); moneyEq(k); }
   else el.value = val == null ? '' : val;
 }
@@ -662,6 +788,7 @@ function onField(k){
   if(!F) return;
   F.touched[k] = true;
   if(F.spec.change) F.spec.change(k, F.v, setVal, F);
+  if(k !== 'fondo' && 'fondo' in F.v && !F.touched.fondo && !F.fondoFixed){ const a = fondoAuto(F.kind, F.v, F.d); if(a !== F.v.fondo) setVal('fondo', a); }
   refreshShow();
 }
 /* Montos: atajos (1.2M, 50k, 50 mil) con parseMoney; puntos de miles mientras escribe */
@@ -679,6 +806,7 @@ function saveForm(){
   if(F.lote != null && LOTE && LOTE.ops[F.lote]){       // editar una tarjeta del lote: no guarda todavía
     const op = LOTE.ops[F.lote];
     op.d = Object.assign({}, F.d, F.v);
+    if(!F.touched.fondo && !F.fondoFixed) delete op.d.fondo;       // el apartado solo cuenta si lo eligió
     LOTE.touched[F.lote] = true;
     closeForm();
     return;
@@ -692,6 +820,11 @@ function saveForm(){
     return;
   }
   const d = F.d, kind = F.kind, fromQuick = F.fromQuick;
+  let msg = res.msg;
+  if(fromQuick && F.parsed){                                       // §12.3: aprende de lo que corrigió
+    const r = learnFrom({kind, v: F.v, v0: F.v0, parsed: F.parsed, qtext: F.qtext, fondoTouched: !!F.touched.fondo});
+    if(r && msg) msg += ' · 🧠 aprendí “' + r.palabra + '”';
+  }
   if(d._pend){
     const p = get('pend', d._pend);
     if(p){ learnRule(p, kind, res.rec || {}); remove('pend', p.id); }
@@ -699,7 +832,7 @@ function saveForm(){
   if(fromQuick){ const q = $('#qInput'); if(q) q.value = ''; }
   closeForm();
   if(res.after) res.after();
-  commit(res.msg, res.toast);
+  commit(msg, res.toast);
 }
 
 /* Regla aprendida: quien → cómo se clasificó (solo gasto/ingreso/transfer y con quien no vacío, §10.4) */
@@ -731,27 +864,121 @@ const undoCobro = x => () => { if(!x) return; restore('cobros', x.c); x.abs.forE
 const venderOpts = d => [['', '— Elige —']].concat(d && d.itemId === '__prev' ? [['__prev', (d.desc || 'Producto') + ' (lo de esta frase)']] : []).concat(stockItems().sort((a, b) => String(a.desc).localeCompare(String(b.desc)))
   .map(i => [i.id, i.desc + ' · costó ' + fmt(i.buyPrice)])).concat([['__nuevo', '➕ Producto no registrado']]);
 
+/* ── Apartado en los formularios (§13.4) ──
+   El chip muestra fondoDe(); el registro guarda `fondo` SOLO si el usuario lo cambió o si vino explícito (parser / registro). */
+const withFondo = (rec, fondo) => { if(fondo) rec.fondo = fondo; return rec; };
+function fondoPick(v, d, f){
+  if(f && f.touched && f.touched.fondo) return fondoValid(v.fondo) ? v.fondo : undefined;
+  return d && fondoValid(d.fondo) ? d.fondo : undefined;
+}
+function fondoAuto(kind, v, d){
+  const it = id => (id && get('items', id)) || {};
+  switch(kind){
+    case 'compra': return fondoDe('items', {}, DB);
+    case 'editItem': return fondoDe('items', it(d.id), DB);
+    case 'venta': return fondoDe('items', v.itemId && v.itemId !== '__nuevo' && v.itemId !== '__prev' ? it(v.itemId) : {}, DB);
+    case 'gasto': return fondoDe('gastos', {tipo: v.tipo}, DB);
+    case 'cobro': return fondoDe('cobros', d.id ? Object.assign({}, get('cobros', d.id) || {}, {fondo: ''}) : {itemId: d.itemId}, DB);
+    case 'abono': return fondoDe('abonos', {cobroId: v.cobroId}, DB);
+    default: return fondoDe(kind === 'ingreso' ? 'ingresos' : 'ajustes', {}, DB);
+  }
+}
+
+/* ── "¿Es otra cosa?" (solo desde el registro rápido): cambia el tipo sin reescribir la frase ── */
+const KSWITCH = [['compra', '🛒', 'Compra'], ['venta', '💰', 'Venta'], ['gasto', '💸', 'Gasto'], ['ingreso', '➕', 'Ingreso'],
+  ['cobro', '🤝', 'Me deben'], ['abono', '💵', 'Abono'], ['transfer', '🔁', 'Mover'], ['reparto', '🔀', 'Repartir']];
+const K_MONEY = {compra: 'buyPrice', venta: 'sellPrice', gasto: 'valor', ingreso: 'valor', cobro: 'total', abono: 'monto', transfer: 'monto', reparto: 'monto'};
+const K_DATE = {compra: 'buyDate', venta: 'sellDate', gasto: 'fecha', ingreso: 'fecha', cobro: 'fecha', abono: 'fecha', transfer: 'fecha', reparto: 'fecha'};
+const K_POCKET = {compra: 'buyPocket', venta: 'sellPocket', gasto: 'bolsillo', ingreso: 'bolsillo', abono: 'bolsillo', transfer: 'from'};
+function switchKind(k){
+  if(!F || !FORMS[k] || k === F.kind) return;
+  F.fields.forEach(f => { if(f.type === 'money'){ const el = $('#f-' + f.k); if(el) F.v[f.k] = el.value.trim() === '' ? '' : parseMoney(el.value); } });
+  const v = F.v, d = F.d, from = F.kind, n = {};
+  let desc = clean(v.desc || v.nombre || d.desc || d._nombre || '');
+  if(from === 'venta' && v.itemId && !['__nuevo', '__prev'].includes(v.itemId)){ const it = get('items', v.itemId); if(it) desc = it.desc; }
+  const monto = num(v[K_MONEY[from]]);
+  if(monto) n[K_MONEY[k]] = monto;
+  n[K_DATE[k]] = v[K_DATE[from]] || d[K_DATE[from]] || today();
+  const pk = K_POCKET[from] && v[K_POCKET[from]];
+  if(pk && K_POCKET[k] && pockets().some(p => p.id === pk)) n[K_POCKET[k]] = pk;
+  if(F.touched.fondo || F.fondoFixed) n.fondo = v.fondo;
+  if(k === 'compra' || k === 'gasto' || k === 'ingreso') n.desc = desc;
+  else if(k === 'venta'){ const it = desc ? bestMatch(desc, stockItems(), i => i.desc) : null; if(it) n.itemId = it.id; else if(desc){ n.itemId = '__nuevo'; n.desc = desc; } }
+  else if(k === 'cobro') n.nombre = titleCase(desc);
+  else if(k === 'abono'){ const c = desc ? bestMatch(desc, cobrosPend(DB), x => x.nombre) : null; if(c) n.cobroId = c.id; else if(desc) n._nombre = titleCase(desc); }
+  openForm(k, n, {fromQuick: true, parsed: F.parsed, qtext: F.qtext});
+}
+
+/* ── Aprende de tus correcciones (§12.3) ──
+   Compara lo que propuso el registro rápido (lo que el usuario VIO al abrir) con lo que guardó. Por cada corrección de
+   categoría / tipo / bolsillo / apartado / clase de movimiento guarda en `reglas` {id:'q:'+palabra, kind:'quick', palabra, …}.
+   La palabra es el sustantivo principal de la descripción ("domicilio"), nunca un número, verbo, relleno, bolsillo o apartado.
+   Decisiones: el bolsillo solo se aprende en gastos e ingresos y solo si la frase NO lo decía; en compras solo la categoría
+   (el bolsillo de un producto varía); ventas, cobros y abonos no aprenden campos (su "palabra" es un producto o una persona). */
+const LEARN_FIELDS = {gasto: {cat: 'cat', tipo: 'tipo', bolsillo: 'bolsillo', fondo: 'fondo'}, ingreso: {bolsillo: 'bolsillo', fondo: 'fondo'}, compra: {cat: 'cat', fondo: 'fondo'}};
+const LEARN_STOP = new Set(('de del el la los las lo un una unos unas en por con sin a al para pa mi mis me le les y o que se su sus tu te ya hoy ayer antier anteayer ' +
+  'manana lunes martes miercoles jueves viernes sabado domingo pasado semana dia dias hace mes este esta eso esa otro otra mas ' +
+  'mil k lucas luca palos palo millon millones melon melones pesos peso pesitos barras barra plata efectivo cash fisico billete nequi neki nequy ' +
+  'transferencia consignacion compre compra compras compro comprar vendi vende venta ventas vendido vender gaste gasto gastos gastar pague pague pago pagos ' +
+  'pagar pagado pagaron ingreso ingresos recibi gane abono abonos abono abonaron debe debo preste prestamo fiado fiao retire saque pase movi transferi ' +
+  'negocio personal aparte separe guarde reserve meti total valor precio costo').split(' '));
+function palabraClave(parsedD, text){
+  const stop = new Set(LEARN_STOP);
+  pockets().concat(fondos()).forEach(x => [x.nombre].concat(x.alias || []).forEach(a => normKey(a).split(' ').forEach(w => stop.add(w))));
+  const ok = w => w.length >= 3 && /[a-z]/.test(w) && !/^\d/.test(w) && !stop.has(w);
+  const desde = s => normKey(s).split(' ').find(ok) || '';
+  return desde((parsedD && (parsedD.desc || '')) || '') || desde(text || '');
+}
+function learnFrom(o){
+  if(!o || !o.parsed) return null;
+  const pk = o.parsed.kind, pd = o.parsed.d || {}, diffs = {};
+  const map = LEARN_FIELDS[o.kind] || {};
+  Object.keys(map).forEach(rf => {
+    const fk = map[rf], sv = o.v[fk];
+    if(sv == null || sv === '') return;
+    const ppk = K_POCKET[pk] || K_POCKET[o.kind];
+    if(rf === 'bolsillo' && pd[ppk] != null && pd[ppk] !== '') return;   // la frase ya lo decía
+    if(rf === 'fondo' && !o.fondoTouched) return;
+    if(String(sv) !== String(o.v0[fk] == null ? '' : o.v0[fk])) diffs[rf] = sv;
+  });
+  if(pk && pk !== o.kind && ['compra', 'venta', 'gasto', 'ingreso', 'cobro', 'abono', 'transfer', 'reparto'].includes(o.kind)) diffs.gkind = o.kind;
+  if(!Object.keys(diffs).length) return null;
+  const palabra = palabraClave(pd, o.qtext);
+  if(!palabra) return null;
+  const id = 'q:' + normKey(palabra), prev = L(DB, 'reglas').find(r => r.id === id && r.kind === 'quick');
+  const rec = Object.assign({}, prev || {}, {id, kind: 'quick', palabra}, diffs);
+  if(diffs.gkind === undefined && prev && prev.gkind && prev.gkind !== o.kind) delete rec.gkind;   // la clase que guardó manda
+  return put('reglas', rec);
+}
+/* "domicilio → Envíos · negocio · Efectivo · 💼 Negocio" */
+const KIND_TXT = {compra: 'compra', venta: 'venta', gasto: 'gasto', ingreso: 'ingreso', cobro: 'me deben', abono: 'abono', transfer: 'mover', reparto: 'repartir'};
+const quickRuleTxt = r => [r.gkind ? 'es ' + (KIND_TXT[r.gkind] || r.gkind) : '', r.cat || '', r.tipo || '', r.bolsillo ? pn(r.bolsillo) : '', r.fondo ? fnName(r.fondo) : '']
+  .filter(Boolean).join(' · ');
+
+const FONDO_EMOJIS = ['🏠', '🐷', '🚗', '🎓', '✈️', '🎁', '📱', '🏥', '💡', '🎯'];
+
 const FORMS = {
   compra: {
     title: '🛒 Compré',
-    prep: d => { if(!d.buyDate) d.buyDate = today(); if(d.buyPocket === undefined) d.buyPocket = defPocket(); if(!d.cond) d.cond = 'bueno'; if(!d.cat) d.cat = d.desc ? guessCat(d.desc) : 'Otro'; },
+    prep: d => { if(!d.buyDate) d.buyDate = d.fecha || today(); if(d.buyPocket === undefined) d.buyPocket = defPocket(); if(!d.cond) d.cond = 'bueno'; if(!d.cat) d.cat = d.desc ? guessCat(d.desc) : 'Otro'; },
     fields: () => [
       {k: 'desc', label: 'Producto', type: 'text', ph: 'Ej: PS5 Slim 1TB', req: 1},
       {k: 'cat', label: 'Categoría', type: 'select', opts: CATS.map(c => [c, c])},
       {k: 'buyPrice', label: '¿Cuánto te costó?', type: 'money', req: 1, ph: 'Ej: 1.2M o 350.000'},
       {k: 'buyPocket', label: '¿De dónde salió la plata?', type: 'seg', opts: pocketOpts().concat([POCKET_NONE])},
+      {k: 'fondo', type: 'fondo', opts: fondoOpts()},
       {k: 'buyDate', label: 'Fecha', type: 'date'},
       {k: 'targetPrice', label: 'Precio meta (opcional)', type: 'money', ph: '¿En cuánto lo quieres vender?'},
       {k: 'cond', label: 'Estado', type: 'seg', opts: [['nuevo', 'Nuevo'], ['bueno', 'Bueno'], ['regular', 'Regular']]},
       {k: 'notes', label: 'Notas (opcional)', type: 'text', ph: 'Color, capacidad, detalles…'}
     ],
     change: (k, v, set, F) => { if(k === 'desc' && !F.touched.cat) set('cat', guessCat(v.desc)); },
-    save: v => {
+    save: (v, d, Fx) => {
       const desc = clean(v.desc), p = num(v.buyPrice);
       if(!desc) return {err: 'Escribe qué compraste', k: 'desc'};
       if(p <= 0) return {err: '¿Cuánto te costó?', k: 'buyPrice'};
-      const rec = put('items', {desc, cat: v.cat || guessCat(desc), cond: v.cond || 'bueno', notes: clean(v.notes), buyPrice: p, buyPocket: v.buyPocket || '',
-        buyDate: v.buyDate || today(), targetPrice: num(v.targetPrice) || null, status: 'stock'});
+      const rec = put('items', withFondo({desc, cat: v.cat || guessCat(desc), cond: v.cond || 'bueno', notes: clean(v.notes), buyPrice: p, buyPocket: v.buyPocket || '',
+        buyDate: v.buyDate || today(), targetPrice: num(v.targetPrice) || null, status: 'stock'}, fondoPick(v, d, Fx)));
       return {rec, msg: `📦 ${desc} en stock · ${full(p)}`};
     }
   },
@@ -759,7 +986,7 @@ const FORMS = {
   venta: {
     title: '💰 Vendí',
     prep: d => {
-      if(!d.sellDate) d.sellDate = today();
+      if(!d.sellDate) d.sellDate = d.fecha || today();
       if(d.sellPocket === undefined) d.sellPocket = defPocket();
       if(!d.completo) d.completo = 'si';
       if(d.itemId === undefined) d.itemId = '';
@@ -789,6 +1016,7 @@ const FORMS = {
         {k: 'tel', label: 'Celular (opcional)', type: 'tel', show: fiado},
         {k: 'compromiso', label: '¿Cuándo te paga? (opcional)', type: 'date', show: fiado},
         {k: 'sellPocket', label: '¿A dónde entró la plata?', type: 'seg', opts: pocketOpts(), show: v => fiado(v) ? num(v.sellPaid) > 0 : num(v.sellPrice) > 0},
+        {k: 'fondo', type: 'fondo', opts: fondoOpts()},
         {k: 'sellDate', label: 'Fecha', type: 'date'},
         {k: 'sellNotes', label: 'Nota (opcional)', type: 'text'}
       ];
@@ -798,8 +1026,9 @@ const FORMS = {
       if(k === 'desc' && !F.touched.cat) set('cat', guessCat(v.desc));
       if(k === 'tiDesc' && !F.touched.tiCat) set('tiCat', guessCat(v.tiDesc));
     },
-    save: (v, d) => {
+    save: (v, d, Fx) => {
       let it;
+      const fondo = fondoPick(v, d, Fx);
       if(!v.itemId) return {err: 'Elige el producto que vendiste', k: 'itemId'};
       const sp = num(v.sellPrice);                                  // plata acordada
       const parte = v.parte === 'si', V = parte ? num(v.tiValor) : 0, tiDesc = clean(v.tiDesc);
@@ -822,20 +1051,21 @@ const FORMS = {
       if(paid > 0 && !v.sellPocket && d && d._lote) return {err: '¿A dónde entró la plata de la venta?', k: 'sellPocket'};
       const pocket = v.sellPocket || defPocket();
       const fecha = v.sellDate || today();
-      const venta = Object.assign({}, it, {status: 'sold', sellPrice: sp + V, sellPaid: paid, sellPocket: pocket, sellDate: fecha, sellNotes: clean(v.sellNotes)});
+      const venta = withFondo(Object.assign({}, it, {status: 'sold', sellPrice: sp + V, sellPaid: paid, sellPocket: pocket, sellDate: fecha, sellNotes: clean(v.sellNotes)}), fondo);
       delete venta.tradeInId; delete venta.tradeInValor;
       let recibido = null;
       if(parte){
         recibido = {id: uid(), desc: tiDesc, cat: v.tiCat || guessCat(tiDesc), cond: 'bueno', notes: 'Parte de pago por ' + it.desc, buyPrice: V, buyPocket: '',
           buyDate: fecha, targetPrice: null, status: 'stock', fromTradeOf: venta.id};
+        if(venta.fondo) recibido.fondo = venta.fondo;               // lo recibido es del mismo apartado que la venta
         venta.tradeInId = recibido.id; venta.tradeInValor = V;
       }
       const rec = put('items', venta);
       if(recibido) put('items', recibido);
       let extra = '';
       if(paid < sp){
-        put('cobros', {nombre: titleCase(cliente), tel: clean(v.tel), total: sp - paid, pagado: 0, bolsillo: '', fecha,
-          compromiso: v.compromiso || '', notas: 'Venta: ' + it.desc, itemId: rec.id});
+        put('cobros', withFondo({nombre: titleCase(cliente), tel: clean(v.tel), total: sp - paid, pagado: 0, bolsillo: '', fecha,
+          compromiso: v.compromiso || '', notas: 'Venta: ' + it.desc, itemId: rec.id}, venta.fondo));
         extra = ` · ${titleCase(cliente)} te debe ${full(sp - paid)}`;
       }
       if(recibido) extra += ` · ${recibido.desc} entró al stock`;
@@ -853,6 +1083,7 @@ const FORMS = {
         {k: 'cond', label: 'Estado', type: 'seg', opts: [['nuevo', 'Nuevo'], ['bueno', 'Bueno'], ['regular', 'Regular']]},
         {k: 'buyPrice', label: 'Costo', type: 'money', req: 1},
         {k: 'buyPocket', label: '¿De dónde salió la plata?', type: 'seg', opts: pocketOpts().concat([POCKET_NONE])},
+        {k: 'fondo', type: 'fondo', opts: fondoOpts()},
         {k: 'buyDate', label: 'Fecha de compra', type: 'date'}
       ];
       if(d.status === 'sold') f.push(
@@ -865,11 +1096,12 @@ const FORMS = {
       return f;
     },
     extra: d => d.status === 'sold' ? '<button type="button" class="btn b-y" data-a="formUnsell" data-testid="form-unsell">↩️ A stock</button>' : '',
-    save: (v, d) => {
+    save: (v, d, Fx) => {
       const desc = clean(v.desc), bp = num(v.buyPrice);
       if(!desc) return {err: 'Escribe el nombre del producto', k: 'desc'};
       if(bp <= 0) return {err: 'El costo debe ser mayor a 0', k: 'buyPrice'};
-      const it = Object.assign({}, get('items', d.id) || d, {desc, cat: v.cat, cond: v.cond, notes: clean(v.notes), buyPrice: bp, buyPocket: v.buyPocket || '', buyDate: v.buyDate || today()});
+      const it = withFondo(Object.assign({}, get('items', d.id) || d, {desc, cat: v.cat, cond: v.cond, notes: clean(v.notes), buyPrice: bp, buyPocket: v.buyPocket || '', buyDate: v.buyDate || today()}),
+        Fx && Fx.touched.fondo ? fondoPick(v, {}, Fx) : undefined);
       if(it.status === 'sold'){
         const sp = num(v.sellPrice);
         if(sp <= 0) return {err: 'El precio de venta debe ser mayor a 0', k: 'sellPrice'};
@@ -883,6 +1115,8 @@ const FORMS = {
         if(c && !wasFull) put('cobros', Object.assign({}, c, {total: cash - it.sellPaid}));
       } else it.targetPrice = num(v.targetPrice) || null;
       put('items', it);
+      if(Fx && Fx.touched.fondo && it.fondo)                        // el cobro de esa venta (y sus abonos) siguen al producto
+        L(DB, 'cobros').filter(c => c.itemId === it.id && c.fondo !== it.fondo).forEach(c => put('cobros', Object.assign({}, c, {fondo: it.fondo})));
       return {rec: it, msg: '✓ ' + desc + ' actualizado'};
     },
     del: (v, d) => {
@@ -911,18 +1145,19 @@ const FORMS = {
       {k: 'cat', label: 'Categoría', type: 'select', opts: GCATS.map(c => [c, c])},
       {k: 'tipo', label: 'Tipo', type: 'seg', opts: [['negocio', '🏢 Negocio'], ['personal', '👤 Personal']]},
       {k: 'bolsillo', label: '¿De dónde salió?', type: 'seg', opts: pocketOpts()},
+      {k: 'fondo', type: 'fondo', opts: fondoOpts()},
       {k: 'fecha', label: 'Fecha', type: 'date'}
     ],
     change: (k, v, set, F) => {
       if(k === 'desc' && !F.touched.cat){ const c = guessGCat(v.desc); set('cat', c); if(!F.touched.tipo && !F.d._pend) set('tipo', NEG_CATS.includes(c) ? 'negocio' : 'personal'); }
       if(k === 'cat' && !F.touched.tipo) set('tipo', NEG_CATS.includes(v.cat) ? 'negocio' : 'personal');
     },
-    save: v => {
+    save: (v, d, Fx) => {
       const valor = num(v.valor);
       if(valor <= 0) return {err: '¿Cuánto fue el gasto?', k: 'valor'};
       if(!v.bolsillo) return {err: '¿De qué bolsillo salió?', k: 'bolsillo'};
       const desc = clean(v.desc) || v.cat || 'Gasto';
-      const rec = put('gastos', {desc, valor, cat: v.cat || 'Otro', tipo: v.tipo === 'negocio' ? 'negocio' : 'personal', bolsillo: v.bolsillo, fecha: v.fecha || today()});
+      const rec = put('gastos', withFondo({desc, valor, cat: v.cat || 'Otro', tipo: v.tipo === 'negocio' ? 'negocio' : 'personal', bolsillo: v.bolsillo, fecha: v.fecha || today()}, fondoPick(v, d, Fx)));
       return {rec, msg: `💸 ${desc} · ${full(valor)} (${rec.tipo})`};
     }
   },
@@ -935,14 +1170,15 @@ const FORMS = {
       {k: 'desc', label: '¿De qué?', type: 'text', ph: 'Ej: Sueldo, regalo, arriendo'},
       {k: 'valor', label: 'Valor', type: 'money', req: 1},
       {k: 'bolsillo', label: '¿A dónde entró?', type: 'seg', opts: pocketOpts()},
+      {k: 'fondo', type: 'fondo', opts: fondoOpts()},
       {k: 'fecha', label: 'Fecha', type: 'date'}
     ],
-    save: v => {
+    save: (v, d, Fx) => {
       const valor = num(v.valor);
       if(valor <= 0) return {err: '¿Cuánto te entró?', k: 'valor'};
       if(!v.bolsillo) return {err: '¿A qué bolsillo entró?', k: 'bolsillo'};
       const desc = clean(v.desc) || 'Ingreso';
-      const rec = put('ingresos', {desc, valor, bolsillo: v.bolsillo, fecha: v.fecha || today()});
+      const rec = put('ingresos', withFondo({desc, valor, bolsillo: v.bolsillo, fecha: v.fecha || today()}, fondoPick(v, d, Fx)));
       return {rec, msg: `➕ ${desc} · ${full(valor)}`};
     }
   },
@@ -957,17 +1193,19 @@ const FORMS = {
       {k: 'pagado', label: '¿Ya te abonó algo? (opcional)', type: 'money', ph: '0'},
       {k: 'bolsillo', label: '¿Le prestaste plata? ¿De dónde salió?', type: 'seg', opts: [['', 'No salió plata (fiado)']].concat(pocketOpts()),
         note: 'Si le prestaste, se descuenta de ese bolsillo.'},
+      {k: 'fondo', type: 'fondo', opts: fondoOpts(), show: v => !!v.bolsillo},
       {k: 'compromiso', label: '¿Cuándo te paga? (opcional)', type: 'date'},
       {k: 'notas', label: 'Nota (opcional)', type: 'text', ph: 'Ej: por los audífonos'}
     ],
-    save: (v, d) => {
+    save: (v, d, Fx) => {
       const nombre = titleCase(clean(v.nombre)), total = num(v.total), pagado = num(v.pagado);
       if(!nombre) return {err: '¿Quién te debe?', k: 'nombre'};
       if(total <= 0) return {err: '¿Cuánto te debe?', k: 'total'};
       if(pagado > total) return {err: 'Lo abonado no puede ser mayor que el total', k: 'pagado'};
       const base = d.id ? (get('cobros', d.id) || {}) : {};
-      const rec = put('cobros', Object.assign({}, base, {id: d.id, nombre, tel: clean(v.tel), total, pagado, bolsillo: v.bolsillo || '', fecha: d.fecha || today(),
-        compromiso: v.compromiso || '', notas: clean(v.notas)}));
+      const fondo = d.id ? (Fx && Fx.touched.fondo ? fondoPick(v, {}, Fx) : undefined) : fondoPick(v, d, Fx);
+      const rec = put('cobros', withFondo(Object.assign({}, base, {id: d.id, nombre, tel: clean(v.tel), total, pagado, bolsillo: v.bolsillo || '', fecha: d.fecha || today(),
+        compromiso: v.compromiso || '', notas: clean(v.notas)}), fondo));
       return {rec, msg: d.id ? '✓ Cobro actualizado' : `🤝 ${nombre} te debe ${full(total - pagado)}`};
     },
     del: (v, d) => {
@@ -986,16 +1224,17 @@ const FORMS = {
       {k: 'cobroId', label: '¿Quién te abonó?', type: 'select', req: 1, opts: [['', '— Elige —']].concat(cobrosPend(DB).map(c => [c.id, c.nombre + ' · debe ' + full(c.pend)]))},
       {k: 'monto', label: '¿Cuánto?', type: 'money', req: 1},
       {k: 'bolsillo', label: '¿A dónde entró?', type: 'seg', opts: pocketOpts()},
+      {k: 'fondo', type: 'fondo', opts: fondoOpts()},
       {k: 'fecha', label: 'Fecha', type: 'date'}
     ],
-    save: v => {
+    save: (v, d, Fx) => {
       const c = cobrosPend(DB).find(x => x.id === v.cobroId);
       if(!c) return {err: '¿Quién te abonó? Elige el cobro', k: 'cobroId'};
       const monto = num(v.monto);
       if(monto <= 0) return {err: '¿Cuánto te abonó?', k: 'monto'};
       if(monto > c.pend) return {err: `${c.nombre} solo te debe ${full(c.pend)}`, k: 'monto'};
       if(!v.bolsillo) return {err: '¿A qué bolsillo entró?', k: 'bolsillo'};
-      const rec = put('abonos', {cobroId: c.id, monto, bolsillo: v.bolsillo, fecha: v.fecha || today()});
+      const rec = put('abonos', withFondo({cobroId: c.id, monto, bolsillo: v.bolsillo, fecha: v.fecha || today()}, fondoPick(v, d, Fx)));
       const rest = c.pend - monto;
       return {rec, msg: rest <= 0 ? `🎉 ¡Saldado! ${c.nombre} ya no te debe nada` : `💵 Abono de ${full(monto)} · ${c.nombre} debe ${full(rest)}`};
     }
@@ -1030,13 +1269,14 @@ const FORMS = {
     title: d => '⚖️ Ajustar ' + pn(d.bolsillo),
     intro: d => `<p class="hint" style="margin-bottom:10px">Según lo que registraste, en <b>${esc(pn(d.bolsillo))}</b> tienes <b class="mono">${full(balances(DB)[d.bolsillo] || 0)}</b>.
       Escribe lo que de verdad tienes hoy y lo cuadramos.</p>`,
-    fields: d => [{k: 'real', label: 'Saldo real hoy en ' + pn(d.bolsillo), type: 'money', req: 1, ph: 'Ej: 1.250.000'}],
+    fields: d => [{k: 'real', label: 'Saldo real hoy en ' + pn(d.bolsillo), type: 'money', req: 1, ph: 'Ej: 1.250.000'},
+      {k: 'fondo', type: 'fondo', opts: fondoOpts(), note: 'La diferencia (de más o de menos) va a este apartado.'}],
     saveLabel: 'Cuadrar',
-    save: (v, d) => {
+    save: (v, d, Fx) => {
       if(v.real === '' || v.real == null) return {err: 'Escribe el saldo real', k: 'real'};
       const delta = num(v.real) - (balances(DB)[d.bolsillo] || 0);
       if(!delta) return {msg: '✓ ' + pn(d.bolsillo) + ' ya cuadra'};
-      const rec = put('ajustes', {bolsillo: d.bolsillo, delta, fecha: today(), nota: 'Cuadre ' + pn(d.bolsillo)});
+      const rec = put('ajustes', withFondo({bolsillo: d.bolsillo, delta, fecha: today(), nota: 'Cuadre ' + pn(d.bolsillo)}, fondoPick(v, d, Fx)));
       return {rec, msg: `⚖️ ${pn(d.bolsillo)} ajustado: ${delta > 0 ? '+' : '−'}${full(Math.abs(delta))}`};
     }
   },
@@ -1045,7 +1285,8 @@ const FORMS = {
     title: '👛 Nuevo bolsillo',
     fields: () => [
       {k: 'nombre', label: 'Nombre', type: 'text', ph: 'Ej: Bancolombia, Daviplata, Ahorros', req: 1},
-      {k: 'ini', label: '¿Cuánto tiene hoy?', type: 'money', ph: '0'}
+      {k: 'ini', label: '¿Cuánto tiene hoy?', type: 'money', ph: '0'},
+      {k: 'alias', label: 'Otras formas de nombrarlo (opcional)', type: 'text', ph: 'Ej: bancolombia, la de ahorros', note: 'Separadas por comas. Así lo reconozco cuando escribes una frase.'}
     ],
     save: v => {
       const nombre = clean(v.nombre);
@@ -1053,22 +1294,116 @@ const FORMS = {
       if(pockets().some(p => normKey(p.nombre) === normKey(nombre))) return {err: 'Ya tienes un bolsillo con ese nombre', k: 'nombre'};
       let id = normKey(nombre).replace(/ /g, '-') || uid();
       if((DB.bolsillos || []).some(p => p.id === id) || !/^[a-z0-9-]+$/.test(id)) id = 'b' + uid();
-      const rec = put('bolsillos', {id, nombre, ini: num(v.ini)});
+      const alias = parseAlias([nombre, v.alias].join(','));
+      const rec = put('bolsillos', {id, nombre, ini: num(v.ini), alias});
       return {rec, msg: '👛 ' + nombre + ' creado'};
     }
   },
 
   renombrar: {
-    title: '✏️ Renombrar bolsillo',
-    prep: d => { const p = get('bolsillos', d.id); d.nombre = p ? p.nombre : ''; },
-    fields: () => [{k: 'nombre', label: 'Nombre', type: 'text', req: 1}],
+    title: '✏️ Editar bolsillo',
+    prep: d => { const p = get('bolsillos', d.id); d.nombre = p ? p.nombre : ''; d.alias = p && Array.isArray(p.alias) ? p.alias.join(', ') : ''; },
+    fields: () => [
+      {k: 'nombre', label: 'Nombre', type: 'text', req: 1},
+      {k: 'alias', label: 'Cómo lo nombras al escribir', type: 'text', ph: 'Ej: nequi de mi pareja, mi novia', note: 'Separadas por comas. “gasté 20k del nequi de mi pareja” → este bolsillo.'}
+    ],
     save: (v, d) => {
       const nombre = clean(v.nombre), p = get('bolsillos', d.id);
       if(!nombre) return {err: 'Ponle un nombre', k: 'nombre'};
       if(!p) return {err: 'Ese bolsillo ya no existe'};
       if(pockets().some(x => x.id !== p.id && normKey(x.nombre) === normKey(nombre))) return {err: 'Ya tienes un bolsillo con ese nombre', k: 'nombre'};
-      put('bolsillos', Object.assign({}, p, {nombre}));
-      return {msg: '✓ Ahora se llama ' + nombre};
+      put('bolsillos', Object.assign({}, p, {nombre, alias: parseAlias(v.alias)}));
+      return {msg: nombre !== p.nombre ? '✓ Ahora se llama ' + nombre : '✓ ' + nombre + ' actualizado'};
+    }
+  },
+
+  /* §13.4: mover plata entre apartados sin moverla de bolsillo */
+  reparto: {
+    title: '🔀 Repartir plata',
+    prep: d => {
+      if(!d.fecha) d.fecha = today();
+      if(d.from && !fondoValid(d.from)) d.from = '';
+      if(d.to && !fondoValid(d.to)) d.to = '';
+      if(!d.from && !d.to) d.from = 'personal';
+      if(!d.from) d.from = d.to === 'personal' ? (fondoValid('negocio') ? 'negocio' : otherFondo(d.to)) : (fondoValid('personal') ? 'personal' : otherFondo(d.to));
+      if(!d.to || d.to === d.from) d.to = d.from === 'personal' ? (fondoValid('negocio') ? 'negocio' : otherFondo(d.from)) : otherFondo(d.from);
+    },
+    intro: () => '<p class="hint" style="margin-bottom:10px">Pasa plata de un apartado a otro. No sale de ningún bolsillo: tu caja sigue igual.</p>',
+    fields: () => [
+      {k: 'from', label: 'Desde', type: 'seg', opts: fondoOpts(true)},
+      {k: 'to', label: 'Hacia', type: 'seg', opts: fondoOpts(true)},
+      {k: 'monto', label: '¿Cuánto?', type: 'money', req: 1, ph: 'Ej: 300k'},
+      {k: 'fecha', label: 'Fecha', type: 'date'},
+      {k: 'nota', label: 'Nota (opcional)', type: 'text', ph: 'Ej: ganancia de octubre'}
+    ],
+    change: (k, v, set) => { if(k === 'from' && v.from === v.to) set('to', otherFondo(v.from)); if(k === 'to' && v.from === v.to) set('from', otherFondo(v.to)); },
+    save: v => {
+      const monto = num(v.monto);
+      if(!fondoValid(v.from) || !fondoValid(v.to)) return {err: 'Elige los dos apartados'};
+      if(v.from === v.to) return {err: 'Elige apartados distintos', k: 'to'};
+      if(monto <= 0) return {err: '¿Cuánto vas a repartir?', k: 'monto'};
+      const rec = put('repartos', {from: v.from, to: v.to, monto, fecha: v.fecha || today(), nota: clean(v.nota)});
+      const queda = balancesFondos(DB)[v.from] || 0;
+      return {rec, msg: `🔀 ${fnName(v.from)} → ${fnName(v.to)} · ${full(monto)}` + (queda < 0 ? ` · ${fnName(v.from)} quedó en ${full(queda)}` : '')};
+    }
+  },
+
+  /* apartado nuevo o editar (nombre, emoji, alias, meta) */
+  fondo: {
+    title: d => d.id ? '✏️ Editar apartado' : '🎯 Nuevo apartado',
+    prep: d => {
+      const f = d.id ? get('fondos', d.id) : null;
+      if(f){ d.nombre = f.nombre || ''; d.emoji = f.emoji || ''; d.alias = (f.alias || []).join(', '); d.meta = +f.meta || ''; }
+      if(!d.emoji) d.emoji = '🏠';
+    },
+    intro: d => d.id ? '' : '<p class="hint" style="margin-bottom:10px">Un apartado es plata con un propósito: 🏠 Arriendo, 🐷 Ahorro, 🎓 Estudio… Después le pasas plata con <b>Repartir</b>.</p>',
+    fields: d => [
+      {k: 'nombre', label: 'Nombre', type: 'text', req: 1, ph: 'Ej: Arriendo'},
+      {k: 'emoji', label: 'Ícono', type: 'seg', chips: 1, opts: FONDO_EMOJIS.concat(d.emoji && !FONDO_EMOJIS.includes(d.emoji) ? [d.emoji] : []).map(e => [e, e])},
+      {k: 'alias', label: 'Cómo lo nombras al escribir (opcional)', type: 'text', ph: 'Ej: arriendo, renta, la casa', note: 'Separadas por comas. “aparté 300k para la renta” → este apartado.'},
+      {k: 'meta', label: 'Meta (opcional)', type: 'money', ph: 'Ej: 1.2M', note: 'Si tienes un objetivo, te muestro una barra de avance.'}
+    ],
+    save: (v, d) => {
+      const nombre = clean(v.nombre);
+      if(!nombre) return {err: 'Ponle un nombre', k: 'nombre'};
+      if(fondos().some(f => f.id !== d.id && normKey(f.nombre) === normKey(nombre))) return {err: 'Ya tienes un apartado con ese nombre', k: 'nombre'};
+      const meta = num(v.meta), alias = parseAlias([nombre, v.alias].join(','));
+      if(d.id){
+        const f = get('fondos', d.id);
+        if(!f) return {err: 'Ese apartado ya no existe'};
+        const rec = put('fondos', Object.assign({}, f, {nombre, emoji: v.emoji || '', alias, meta: meta > 0 ? meta : null}));
+        return {rec, msg: '✓ ' + fnName(rec.id) + ' actualizado'};
+      }
+      let id = normKey(nombre).replace(/ /g, '_');
+      if(!/^[a-z0-9_]+$/.test(id) || (DB.fondos || []).some(f => f.id === id) || (DB.bolsillos || []).some(b => b.id === id)) id = 'f' + uid();
+      const orden = fondos().reduce((m, f) => Math.max(m, +f.orden || 0), 0) + 1;
+      const rec = put('fondos', {id, nombre, emoji: v.emoji || '', alias, meta: meta > 0 ? meta : null, orden});
+      return {rec, msg: '🎯 ' + fnName(id) + ' creado · pásale plata con Repartir'};
+    },
+    del: (v, d) => delFondo(d.id, true)
+  },
+
+  /* tarjeta "Organiza tu plata en apartados": cuánto de lo que hay hoy es capital del negocio */
+  organizar: {
+    title: '🎯 Organiza tu plata',
+    intro: () => {
+      const bf = balancesFondos(DB);
+      return `<p class="hint" style="margin-bottom:10px">Hoy tienes <b class="mono">${full(cajaTotal())}</b> entre todos tus bolsillos
+        (ahora: 💼 Negocio ${full(bf.negocio || 0)} · 👤 Personal ${full(bf.personal || 0)}).
+        ¿Cuánto de eso es <b>capital del negocio</b>, para comprar mercancía? El resto queda como <b>👤 Personal</b>. Después puedes crear más apartados.</p>`;
+    },
+    fields: () => [{k: 'negocio', label: '💼 Capital del negocio hoy', type: 'money', req: 1, ph: 'Ej: 2M'}],
+    saveLabel: 'Organizar',
+    save: v => {
+      if(v.negocio === '' || v.negocio == null) return {err: '¿Cuánto es del negocio? (puede ser 0)', k: 'negocio'};
+      const x = num(v.negocio), caja = cajaTotal();
+      if(x < 0) return {err: 'Escribe un valor positivo', k: 'negocio'};
+      if(x > caja) return {err: 'No puede ser más de lo que tienes hoy (' + full(caja) + ')', k: 'negocio'};
+      const delta = x - (balancesFondos(DB).negocio || 0);
+      if(delta) put('repartos', {from: delta > 0 ? 'personal' : 'negocio', to: delta > 0 ? 'negocio' : 'personal', monto: Math.abs(delta), fecha: today(), nota: 'Organizar apartados'});
+      CFG.fondosIntro = 'ok'; saveCfg();
+      const bf = balancesFondos(DB);
+      return {msg: `🎯 Listo: 💼 Negocio ${full(bf.negocio || 0)} · 👤 Personal ${full(bf.personal || 0)}`};
     }
   },
 
@@ -1200,8 +1535,45 @@ function delBolsillo(id){
   commit('🗑️ ' + p.nombre + ' eliminado', {undo: () => { restore('bolsillos', p); commit('Recuperado ✓'); }});
 }
 
+/* Eliminar apartado: solo los creados por el usuario, en $0 y sin movimientos (§13.4) */
+function delFondo(id, fromForm){
+  const f = get('fondos', id);
+  if(!f) return null;
+  const s = balancesFondos(DB)[id] || 0;
+  if(FONDO_BASE.includes(id)){ toast(fnName(id) + ' es de base: puedes cambiarle el nombre, pero no eliminarlo', {err: true}); return null; }
+  if(s){ toast('Primero deja ' + fnName(id) + ' en $0 (usa Repartir): tiene ' + full(s), {err: true}); return null; }
+  if(fondoUsed(id)){ toast(fnName(id) + ' tiene movimientos: no se puede eliminar', {err: true}); return null; }
+  if(!confirm('¿Eliminar el apartado ' + fnName(id) + '?')) return null;
+  remove('fondos', id);
+  const r = {msg: '🗑️ ' + fnName(id) + ' eliminado', undo: () => { restore('fondos', f); commit('Recuperado ✓'); }};
+  if(fromForm) return r;
+  commit(r.msg, {undo: r.undo});
+  return r;
+}
+
+/* Reporte del cuadre (no debería hacer falta nunca): saldos por bolsillo y por apartado + conteos */
+function cuadreReport(){
+  const b = balances(DB), f = balancesFondos(DB);
+  return 'Mi App ' + APP_VERSION + ' · reporte de cuadre ' + today() + '\nBolsillos ' + JSON.stringify(b) + ' = ' + sumObj(b) +
+    '\nApartados ' + JSON.stringify(f) + ' = ' + sumObj(f) + '\nRegistros ' + JSON.stringify(COLS.reduce((o, c) => (o[c] = L(DB, c).length, o), {}));
+}
+
 const ACT = {
   form: el => openForm(el.dataset.k, {}),
+  goDinero: () => { UI.masSeg = 'dinero'; UI.dnSeg = 'para'; setView('mas'); },
+  repartir: el => openForm('reparto', el.dataset.fondo ? {to: el.dataset.fondo} : {}),
+  nuevoFondo: () => openForm('fondo', {}),
+  editFondo: el => openForm('fondo', {id: el.dataset.id}),
+  delFondo: el => delFondo(el.dataset.id),
+  organizarNo: () => { CFG.fondosIntro = 'no'; saveCfg(); renderInicio(); toast('Cuando quieras, está en Más → Dinero → ¿Para qué es?'); },
+  reportarCuadre: () => copyText(cuadreReport(), 'Reporte de cuadre'),
+  kswitch: el => switchKind(el.dataset.k),
+  olvidar: el => {
+    const r = get('reglas', el.dataset.id);
+    if(!r) return;
+    remove('reglas', r.id);
+    commit('🧹 Olvidé “' + (r.palabra || r.id) + '”', {undo: () => { restore('reglas', r); commit('Recuperado ✓'); }});
+  },
   ex: el => { const q = $('#qInput'); q.value = el.dataset.t; q.focus(); toast('Cámbialo a tu gusto y toca ➤'); },
   goAjustes: () => { UI.masSeg = 'ajustes'; setView('mas'); },
   goStock: () => { UI.stSeg = 'stock'; setView('stock'); },
@@ -1242,13 +1614,16 @@ function formValues(kind, d){
 /* prep del formulario, pero el bolsillo que no se dijo queda SIN elegir (se elige con chips) */
 function lotePrep(kind, d0){
   const d = Object.assign({}, d0), pk = LOTE_POCKET[kind], had = pk && d[pk] !== undefined;
+  if(d.fondo != null && !fondoValid(d.fondo)) delete d.fondo;
   if(FORMS[kind].prep) FORMS[kind].prep(d);
   if(pk && !had) delete d[pk];
   return d;
 }
 
 function startLote(arr, opts){
-  LOTE = {ops: arr.map(r => ({kind: r.kind, d: lotePrep(r.kind, r.d || {})})), fromQuick: !!(opts && opts.fromQuick), touched: {}};
+  LOTE = {ops: arr.map(r => { const d = lotePrep(r.kind, r.d || {});
+    return {kind: r.kind, d, parsed: JSON.parse(JSON.stringify({kind: r.kind, d: r.d || {}})), v0: formValues(r.kind, d)}; }),
+    fromQuick: !!(opts && opts.fromQuick), qtext: (opts && opts.qtext) || '', touched: {}};
   openLote();
 }
 
@@ -1298,6 +1673,9 @@ function loteMissing(){
     } else if(kind === 'transfer'){
       if(num(d.monto) <= 0) return n + 'Falta cuánto moviste';
       if(!d.from || !d.to || d.from === d.to) return n + 'Elige bolsillos distintos para mover';
+    } else if(kind === 'reparto'){
+      if(num(d.monto) <= 0) return n + 'Falta cuánto vas a repartir';
+      if(!fondoValid(d.from) || !fondoValid(d.to) || d.from === d.to) return n + 'Elige apartados distintos para repartir';
     }
   }
   return '';
@@ -1310,7 +1688,8 @@ function loteChips(i, k, opts, val){
 
 function loteCardsHTML(){
   const cards = [];
-  const card = (i, ico, html, extra, ac) => cards.push(`<div class="alert" data-testid="lote-card" data-i="${i}" style="--ac:${ac}">
+  const card = (i, ico, html, extra, ac) => cards.push(`<div class="alert" data-testid="lote-card" data-i="${i}" style="--ac:${ac}">${
+    i >= 0 && LOTE.ops[i].d.fondo ? `<div class="meta" style="float:right;margin:0 0 4px 6px" data-testid="lote-fondo">Plata de: ${esc(fnName(LOTE.ops[i].d.fondo))}</div>` : ''}
     <div class="alert-h"><div style="min-width:0;flex:1"><div class="alert-t" style="font-weight:500">${ico} ${html}</div></div>
     ${i >= 0 ? `<div style="display:flex;gap:4px;flex-shrink:0"><button type="button" class="ibtn" data-a="loteEdit" data-i="${i}" aria-label="Editar">✏️</button>
     <button type="button" class="ibtn" data-a="loteDel" data-i="${i}" aria-label="Quitar">✕</button></div>` : ''}</div>${extra || ''}</div>`);
@@ -1341,6 +1720,8 @@ function loteCardsHTML(){
       card(i, '🤝', `${b(d.nombre || '¿quién?')} te debe ${m(num(d.total) - num(d.pagado))}${d.bolsillo ? ' · préstamo desde ' + esc(pn(d.bolsillo)) : ''}`, '', 'var(--P)');
     } else if(kind === 'transfer'){
       card(i, '🔁', `Moviste ${m(d.monto)} de ${b(pn(d.from))} a ${b(pn(d.to))}`, '', 'var(--B)');
+    } else if(kind === 'reparto'){
+      card(i, '🔀', `Repartiste ${m(d.monto)} de ${b(fnName(d.from))} a ${b(fnName(d.to))}`, '<div class="meta" style="margin-top:4px">No sale de ningún bolsillo.</div>', 'var(--P)');
     }
   });
   return cards.join('');
@@ -1409,6 +1790,8 @@ function saveLote(){
     toast(String(e && e.message || e), {err: true});
     return;
   }
+  if(LOTE.fromQuick) LOTE.ops.forEach(op => learnFrom({kind: op.kind, v: formValues(op.kind, op.d), v0: op.v0, parsed: op.parsed, qtext: LOTE.qtext,
+    fondoTouched: !!op.d.fondo && op.d.fondo !== op.parsed.d.fondo}));          // §12.3 también en el lote
   const undo = undoFrom(before);
   if(LOTE.fromQuick){ const q = $('#qInput'); if(q) q.value = ''; }
   closeLote();
@@ -1434,9 +1817,11 @@ Object.assign(ACT, {
 
 /* ═════════ 4. REGISTRO RÁPIDO Y VOZ ═════════ */
 const quickCtx = () => ({
-  bolsillos: pockets().map(p => ({id: p.id, nombre: p.nombre})),
-  stock: stockItems().map(i => ({id: i.id, desc: i.desc})),
-  cobros: cobrosPend(DB).map(c => ({id: c.id, nombre: c.nombre}))
+  bolsillos: pockets().map(p => ({id: p.id, nombre: p.nombre, alias: Array.isArray(p.alias) ? p.alias.slice() : []})),
+  fondos: fondos().map(f => ({id: f.id, nombre: f.nombre, alias: Array.isArray(f.alias) ? f.alias.slice() : []})),
+  stock: stockItems().map(i => ({id: i.id, desc: i.desc, cat: i.cat})),
+  cobros: cobrosPend(DB).map(c => ({id: c.id, nombre: c.nombre})),
+  reglas: L(DB, 'reglas').filter(r => r.kind === 'quick')
 });
 
 function runQuick(text){
@@ -1448,8 +1833,9 @@ function runQuick(text){
   arr = (arr || []).filter(r => r && FORMS[r.kind]);
   if(!arr.length) arr = [{kind: 'gasto', d: {}}];
   if(q) q.blur();
-  if(arr.length === 1 && !arr[0].d.tradeIn) openForm(arr[0].kind, Object.assign({}, arr[0].d), {fromQuick: true});
-  else startLote(arr, {fromQuick: true});           // §11.4: varias operaciones → hoja "Esto entendí"
+  arr = arr.map(r => ({kind: r.kind, d: Object.assign({}, r.d || {})}));
+  if(arr.length === 1 && !arr[0].d.tradeIn) openForm(arr[0].kind, Object.assign({}, arr[0].d), {fromQuick: true, parsed: JSON.parse(JSON.stringify(arr[0])), qtext: text});
+  else startLote(arr, {fromQuick: true, qtext: text});           // §11.4: varias operaciones → hoja "Esto entendí"
 }
 
 let REC = null;
@@ -1490,22 +1876,39 @@ function renderAjustes(){
   if(hasCloud()){
     let links = [];
     try {
-      links = [
-        ['Macro A · Nequi → App (POST)', cloudURL({action: 'capture', key: CFG.key, bolsillo: 'nequi'})],
-        ['Macro B · Resumen semanal (GET)', cloudURL({action: 'summary', key: CFG.key})],
-        ['Macro C · Recordatorios (GET)', cloudURL({action: 'reminders', key: CFG.key})]
-      ];
+      /* §13.4: un enlace de captura por cada bolsillo digital (el de Nequi pareja va en el celular de la pareja) */
+      links = digitalPockets().map(p => ['Macro A · ' + p.nombre + ' → App (POST)', cloudURL({action: 'capture', key: CFG.key, bolsillo: p.id}),
+        p.id === 'nequi_pareja' ? 'Va en el celular de tu pareja (si instala MacroDroid): lo que llegue a su Nequi entra como ' + p.nombre + '.' : ''])
+        .concat([
+          ['Macro B · Resumen semanal (GET)', cloudURL({action: 'summary', key: CFG.key}), ''],
+          ['Macro C · Recordatorios (GET)', cloudURL({action: 'reminders', key: CFG.key}), '']
+        ]);
     } catch(e){ links = []; }
-    h = links.map(([l, url]) => `<div class="fld"><label>${esc(l)}</label><div class="copy">
+    h = links.map(([l, url, note]) => `<div class="fld"><label>${esc(l)}</label><div class="copy">
       <input class="in" readonly value="${esc(url)}" aria-label="${esc(l)}">
-      <button type="button" class="btn b-gh" data-a="copy" data-t="${esc(url)}" data-n="${esc(l)}">Copiar</button></div></div>`).join('') +
+      <button type="button" class="btn b-gh" data-a="copy" data-t="${esc(url)}" data-n="${esc(l)}">Copiar</button></div>${note ? `<span class="note">${esc(note)}</span>` : ''}</div>`).join('') +
       '<p class="hint" style="margin-bottom:12px">Pégalo en el campo URL de la acción “Solicitud HTTP” de MacroDroid (la guía tiene el paso a paso).</p>';
   } else h = '<p class="hint" style="margin-bottom:12px">Primero conecta tu nube arriba; aquí aparecerán los enlaces listos para copiar.</p>';
   $('#mdLinks').innerHTML = h;
   $('#cfgTest').disabled = !hasCloud();
   $('#cfgSync').disabled = !hasCloud();
+  renderAprendido();
   $('#appVer').textContent = APP_VERSION;
   $('#appCount').textContent = String(COLS.reduce((a, c) => a + L(DB, c).length, 0));
+}
+
+/* Más → Ajustes → "Lo que he aprendido" (§12.3): reglas del registro rápido y de Nequi, cada una con Olvidar */
+function renderAprendido(){
+  const el = $('#aprBody');
+  if(!el) return;
+  const rs = L(DB, 'reglas'), q = rs.filter(r => r.kind === 'quick').sort((a, b) => String(a.palabra || a.id).localeCompare(String(b.palabra || b.id)));
+  const nq = rs.filter(r => r.kind !== 'quick').sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const line = (r, t, s) => `<div class="kvline" data-testid="regla" data-id="${esc(r.id)}"><span style="min-width:0">${t}<br><small class="mut">${esc(s)}</small></span>
+    <button type="button" class="btn b-gh" data-a="olvidar" data-id="${esc(r.id)}" data-testid="olvidar">Olvidar</button></div>`;
+  let h = '';
+  if(q.length) h += `<p class="hint" style="margin-bottom:2px">Cuando escribes una frase:</p>` + q.map(r => line(r, `<b>${esc(r.palabra || r.id.replace(/^q:/, ''))}</b> → ${esc(quickRuleTxt(r) || '—')}`, 'Lo aprendí cuando lo corregiste')).join('');
+  if(nq.length) h += `<p class="hint" style="margin:10px 0 2px">Movimientos de Nequi (“↻ Igual que antes”):</p>` + nq.map(r => line(r, `📲 <b>${esc(r.id)}</b> → ${esc(ruleLabel(r))}`, 'Por clasificar')).join('');
+  el.innerHTML = h || '<p class="hint">Todavía nada. Cuando corrijas algo que escribiste (p. ej. “domicilio” de Comida a Envíos), lo recuerdo para la próxima.</p>';
 }
 
 function renderCfgInfo(){
@@ -1591,7 +1994,7 @@ function importFile(file){
     if(j && j.db && typeof j.db === 'object' && !Array.isArray(j.items)) j = j.db;
     if(!j || typeof j !== 'object' || !COLS.some(c => Array.isArray(j[c]))) return toast('Ese archivo no es un respaldo de Mi App', {err: true});
     const n = COLS.reduce((a, c) => a + (Array.isArray(j[c]) ? j[c].length : 0), 0);
-    DB = mergeDB(DB, j);          // une, no reemplaza: por id gana el más reciente
+    DB = ensureSeeds(mergeDB(DB, j));   // une, no reemplaza: por id gana el más reciente
     UI.rev++;
     if(!CFG.onboarded){ CFG.onboarded = true; saveCfg(); }
     commit('⬆️ Importado: ' + plural(n, 'registro') + ' unidos');
@@ -1684,6 +2087,8 @@ function bindEvents(){
   $('#mvNext').addEventListener('click', () => { if(UI.mvMonth < today().slice(0, 7)){ UI.mvMonth = ymAdd(UI.mvMonth, 1); renderMovs(); } });
   $('#mvFil').addEventListener('click', e => { const b = e.target.closest('button[data-f]'); if(b){ UI.mvF = b.dataset.f; renderMovs(); } });
   $('#masSeg').addEventListener('click', e => { const b = e.target.closest('button[data-seg]'); if(b){ UI.masSeg = b.dataset.seg; renderMas(); } });
+  $('#dnSeg').addEventListener('click', e => { const b = e.target.closest('button[data-seg]'); if(b){ UI.dnSeg = b.dataset.seg; renderDinero(); } });
+  $('#mvFondo').addEventListener('change', e => { UI.mvFondo = e.target.value; renderMovs(); });
   $('#anPrev').addEventListener('click', () => { UI.anMonth = ymAdd(UI.anMonth, -1); renderAnalisis(); });
   $('#anNext').addEventListener('click', () => { if(UI.anMonth < today().slice(0, 7)){ UI.anMonth = ymAdd(UI.anMonth, 1); renderAnalisis(); } });
   $('#cbNew').addEventListener('click', () => openForm('cobro', {}));
@@ -1708,11 +2113,15 @@ function bindEvents(){
   body.addEventListener('input', onEdit);
   body.addEventListener('change', onEdit);
   body.addEventListener('click', e => {
+    const tg = e.target.closest('[data-fondo-toggle]');      // chip "Plata de: … ▾" → despliega los apartados
+    if(tg){ const o = tg.parentElement.querySelector('.opts'); if(o){ o.hidden = !o.hidden; tg.setAttribute('aria-expanded', String(!o.hidden)); } return; }
     const b = e.target.closest('.opts button[data-v]');
     if(!b || !F) return;
     const k = b.parentElement.dataset.k;
     setVal(k, b.dataset.v);
     onField(k);
+    const fc = b.closest('.fchip');
+    if(fc){ b.parentElement.hidden = true; const t = $('.fchip-b', fc); if(t) t.setAttribute('aria-expanded', 'false'); }
   });
   body.addEventListener('focusout', e => {
     const el = e.target;
@@ -1752,7 +2161,7 @@ function registerSW(){
 
 function init(){
   CFG = Object.assign({url: '', key: '', onboarded: false, last: 0}, loadJSON(K_CFG) || {});
-  DB = mergeDB(emptyDB(), loadJSON(K_DB) || {});
+  DB = ensureSeeds(mergeDB(emptyDB(), loadJSON(K_DB) || {}));
   saveDB();
   UI.mvMonth = UI.anMonth = today().slice(0, 7);
   bindEvents();

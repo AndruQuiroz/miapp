@@ -2,16 +2,52 @@
    core.js — lógica compartida entre la app y Google Apps Script
    (sin DOM: funciona en el navegador y en el servidor)
 ═══════════════════════════════════════════════ */
-const COLS = ['items','gastos','ingresos','cobros','abonos','transfers','ajustes','pend','bolsillos','reglas'];
+const COLS = ['items','gastos','ingresos','cobros','abonos','transfers','ajustes','pend','bolsillos','reglas','fondos','repartos'];
+
+/* ── Semillas: mismo id y u:1 en todos los dispositivos → nunca se duplican al sincronizar ──
+   Bolsillo = DÓNDE está la plata. Apartado (fondos) = PARA QUÉ es la plata (SPEC §13). */
+const SEED_BOLSILLOS = [
+  {id:'efectivo', nombre:'Efectivo', ini:0, alias:['efectivo','cash','fisico','billete','plata en mano','en mano'], u:1},
+  {id:'nequi', nombre:'Nequi', ini:0, alias:['nequi','mi nequi','neki','nequy'], u:1},
+  {id:'nequi_pareja', nombre:'Nequi pareja', ini:0, alias:['nequi de mi pareja','pareja','mi novia','mi esposa','mi mujer','mi amor','de ella'], u:1}
+];
+const SEED_FONDOS = [
+  {id:'negocio', nombre:'Negocio', emoji:'💼', alias:['negocio','capital','del negocio','plata del negocio'], orden:0, u:1},
+  {id:'personal', nombre:'Personal', emoji:'👤', alias:['personal','lo personal','mi plata','para mi'], orden:1, u:1}
+];
+const copiaSemilla = r => JSON.parse(JSON.stringify(r));
 
 function emptyDB(){
   const d = {};
   COLS.forEach(c => d[c] = []);
-  d.bolsillos = [
-    {id:'efectivo', nombre:'Efectivo', ini:0, u:1},
-    {id:'nequi', nombre:'Nequi', ini:0, u:1}
-  ];
+  d.bolsillos = SEED_BOLSILLOS.map(copiaSemilla);
+  d.fondos = SEED_FONDOS.map(copiaSemilla);
   return d;
+}
+
+/* Completa una DB existente (p. ej. de una versión anterior): crea las colecciones que falten y agrega
+   las semillas que no estén. NUNCA toca un registro que ya existe (ni si está borrado ni si el usuario
+   lo editó); la única excepción es darle sus alias a una semilla que sigue intacta (u ≤ 1, sin alias),
+   lo cual es idéntico en todos los dispositivos. Idempotente. Modifica `db` y lo devuelve. */
+function ensureSeeds(db){
+  db = db || {};
+  COLS.forEach(c => { if(!Array.isArray(db[c])) db[c] = []; });
+  const completar = (col, seeds) => {
+    const out = db[col].slice();
+    seeds.forEach(s => {
+      const i = out.findIndex(r => r && r.id === s.id);
+      if(i < 0) out.push(copiaSemilla(s));
+      else {
+        const r = out[i];
+        // mismo orden de claves que la semilla → el JSON es idéntico en todos los dispositivos
+        if((+r.u || 0) <= 1 && !r.del && !Array.isArray(r.alias)) out[i] = Object.assign(copiaSemilla(s), r, {alias: s.alias.slice()});
+      }
+    });
+    db[col] = out;
+  };
+  completar('bolsillos', SEED_BOLSILLOS);
+  completar('fondos', SEED_FONDOS);
+  return db;
 }
 
 /* Une dos bases: por cada registro gana el más reciente (campo u). Los borrados son {del:1}.
@@ -187,6 +223,83 @@ function balances(db){
   return b;
 }
 
+/* ── Apartados (fondos): PARA QUÉ es la plata ──
+   fondoDe(col, rec, db) → id del apartado al que pertenece la plata de un registro.
+   Orden: rec.fondo (si ese apartado existe y no está borrado; si no existe → 'personal')
+   → items: 'negocio' → gastos: tipo 'negocio' ? 'negocio' : 'personal' → ingresos: 'personal'
+   → cobros: con itemId 'negocio', si no 'personal' → abonos: el del cobro → ajustes: 'personal'.
+   Si el apartado por defecto está borrado → 'personal'. transfers y repartos no tienen apartado → null. */
+function fondoResolver(db){
+  const vivos = new Set(L(db, 'fondos').map(f => f.id));
+  const cobros = new Map();
+  ((db && db.cobros) || []).forEach(c => { if(c && c.id != null && (!cobros.has(c.id) || !c.del)) cobros.set(c.id, c); });
+  const valido = id => (id === 'personal' || vivos.has(id)) ? id : 'personal';
+  const resolver = (col, rec) => {
+    rec = rec || {};
+    if(col === 'transfers' || col === 'repartos') return null;
+    if(rec.fondo != null && rec.fondo !== '') return valido(rec.fondo);
+    switch(col){
+      case 'items': return valido('negocio');
+      case 'gastos': return valido(rec.tipo === 'negocio' ? 'negocio' : 'personal');
+      case 'cobros': return valido(rec.itemId ? 'negocio' : 'personal');
+      case 'abonos': { const c = cobros.get(rec.cobroId); return c ? resolver('cobros', c) : 'personal'; }
+      default: return 'personal'; // ingresos, ajustes y cualquier otro
+    }
+  };
+  resolver.valido = valido;
+  return resolver;
+}
+function fondoDe(col, rec, db){ return fondoResolver(db)(col, rec); }
+
+/* Saldo por apartado: los MISMOS movimientos que balances() (mismas condiciones y montos), agrupados
+   por apartado, más los repartos. Invariante: suma(balancesFondos) === suma(balances).
+   El saldo inicial de cada bolsillo se reparte con iniFondos {fondoId: monto}; lo no repartido → 'personal'.
+   Un apartado puede quedar negativo (p. ej. el negocio usó plata personal). */
+function balancesFondos(db){
+  const fdo = fondoResolver(db);
+  const f = {};
+  const has = k => Object.prototype.hasOwnProperty.call(f, k);
+  const put = (k, v) => { if(!has(k)) f[k] = 0; f[k] += +v || 0; };
+  L(db, 'fondos').forEach(x => { if(!has(x.id)) f[x.id] = 0; });
+  if(!has('personal')) f.personal = 0;
+  // como balances(): mismo bolsillo vivo repetido → cuenta el ini del último
+  const ini = new Map();
+  L(db, 'bolsillos').forEach(p => ini.set(String(p.id), p));
+  ini.forEach(p => {
+    let resto = +p.ini || 0;
+    const parts = (p.iniFondos && typeof p.iniFondos === 'object' && !Array.isArray(p.iniFondos)) ? p.iniFondos : {};
+    Object.keys(parts).forEach(k => {
+      const v = +parts[k] || 0;
+      if(!v) return;
+      put(fdo.valido(k), v);
+      resto -= v;
+    });
+    put('personal', resto);
+  });
+  // un movimiento solo cuenta si toca un bolsillo (igual que add() en balances)
+  const add = (pocket, fondo, v) => { if(pocket == null || pocket === '') return; put(fondo, v); };
+  L(db, 'items').forEach(i => {
+    const k = fdo('items', i);
+    add(i.buyPocket, k, -i.buyPrice);
+    if(i.status === 'sold') add(i.sellPocket, k, i.sellPaid != null ? i.sellPaid : i.sellPrice);
+  });
+  L(db, 'gastos').forEach(g => add(g.bolsillo, fdo('gastos', g), -g.valor));
+  L(db, 'ingresos').forEach(g => add(g.bolsillo, fdo('ingresos', g), g.valor));
+  L(db, 'abonos').forEach(a => add(a.bolsillo, fdo('abonos', a), a.monto));
+  L(db, 'cobros').forEach(c => { if(c.bolsillo) add(c.bolsillo, fdo('cobros', c), -((+c.total || 0) - (+c.pagado || 0))); });
+  // transfers: cambian DÓNDE está la plata, no PARA QUÉ es → su neto en apartados es 0. Se recorren igual que
+  // en balances() para que un transfer cojo (sin "desde" o sin "hacia") cuadre también: esa plata va a 'personal'.
+  L(db, 'transfers').forEach(t => { add(t.from, 'personal', -t.monto); add(t.to, 'personal', t.monto); });
+  L(db, 'ajustes').forEach(a => add(a.bolsillo, fdo('ajustes', a), a.delta));
+  L(db, 'repartos').forEach(r => {
+    const m = +r.monto || 0;
+    if(!m) return;
+    put(fdo.valido(r.from), -m);
+    put(fdo.valido(r.to), m);
+  });
+  return f;
+}
+
 function cobroPagado(db, c){
   return (+c.pagado || 0) + sum(L(db, 'abonos').filter(a => a.cobroId === c.id), 'monto');
 }
@@ -229,6 +342,8 @@ function summaryText(db){
   lines.push(sold.length ? `📊 ${sold.length} venta${sold.length > 1 ? 's' : ''} por ${fmt(ventas)} · utilidad ${fmt(bruta - gN)}` : '📊 Sin ventas esta semana');
   lines.push(`💸 Gastos ${fmt(gN + gP)} (negocio ${fmt(gN)} · personal ${fmt(gP)})`);
   lines.push(`💵 Caja ${fmt(caja)} · 📦 Stock ${fmt(sum(st, 'buyPrice'))} (${st.length})`);
+  const lf = fondosLinea(db);
+  if(lf) lines.push(lf);
   if(cp.length) lines.push(`🤝 Te deben ${fmt(sum(cp, 'pend'))}: ` + cp.slice(0, 3).map(c => String(c.nombre).split(' ')[0] + ' ' + fmt(c.pend)).join(', '));
   if(quietos.length) lines.push(`⚠️ ${quietos.length} producto${quietos.length > 1 ? 's' : ''} con +30 días: ` + quietos.slice(0, 2).map(i => i.desc).join(', '));
   if(np) lines.push(`📲 ${np} movimiento${np > 1 ? 's' : ''} por clasificar`);
@@ -248,7 +363,31 @@ function remindersText(db){
     const dias = Math.floor((Date.now() - lastU) / 864e5);
     if(dias >= 3) lines.push(`📝 Llevas ${dias} días sin registrar nada. ¿Compraste, vendiste o gastaste algo?`);
   }
+  // Cuadre: si hace 15+ días no registra un ajuste (o, si nunca lo ha hecho, desde su primer movimiento)
+  const fechasMov = [];
+  L(db, 'items').forEach(i => { fechasMov.push(i.buyDate); if(i.status === 'sold') fechasMov.push(i.sellDate); });
+  ['gastos','ingresos','abonos','transfers','cobros','repartos'].forEach(c => L(db, c).forEach(x => fechasMov.push(x.fecha)));
+  const validas = fechasMov.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))).sort();
+  if(validas.length){
+    const ultAjuste = L(db, 'ajustes').map(a => String(a.fecha || '')).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().pop();
+    const desde = ultAjuste || validas[0];
+    if(desde <= t && daysBetween(desde, t) >= 15) lines.push('🧮 Hace rato no cuadras: compara tus saldos con Nequi y el efectivo real');
+  }
   return lines.join('\n');
 }
 
-if(typeof module !== 'undefined') module.exports = {COLS, emptyDB, mergeDB, L, sum, ymd, today, shiftDate, daysBetween, MESES, fmt, full, fd, monthLabel, extractMonto, parseMoney, parseNoti, balances, cobroPagado, cobrosPend, monthStats, summaryText, remindersText};
+/* Apartados vivos en orden (orden, luego nombre). */
+function fondosOrdenados(db){
+  return L(db, 'fondos').slice().sort((a, b) => ((+a.orden || 0) - (+b.orden || 0)) || String(a.nombre || '').localeCompare(String(b.nombre || '')));
+}
+/* "💼 Negocio $1.2M · 👤 Personal $300K · 🏠 Arriendo $0" ('' si no hay apartados) */
+function fondosLinea(db){
+  const bf = balancesFondos(db), lista = fondosOrdenados(db);
+  const ids = lista.map(f => f.id);
+  Object.keys(bf).forEach(k => { if(ids.indexOf(k) < 0 && bf[k]) ids.push(k); });
+  const nombre = id => { const f = lista.find(x => x.id === id); return f ? ((f.emoji ? f.emoji + ' ' : '') + (f.nombre || id)) : (id === 'personal' ? '👤 Personal' : id); };
+  return ids.map(id => nombre(id) + ' ' + fmt(bf[id] || 0)).join(' · ');
+}
+
+if(typeof module !== 'undefined') module.exports = {COLS, emptyDB, mergeDB, L, sum, ymd, today, shiftDate, daysBetween, MESES, fmt, full, fd, monthLabel, extractMonto, parseMoney, parseNoti, balances, cobroPagado, cobrosPend, monthStats, summaryText, remindersText,
+  SEED_BOLSILLOS, SEED_FONDOS, ensureSeeds, fondoDe, balancesFondos, fondosOrdenados, fondosLinea};
