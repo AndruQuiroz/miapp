@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -236,11 +236,15 @@ function movs(){
   const rows = [];
   const cob = {}; (DB.cobros || []).forEach(c => cob[c.id] = c);
   L(DB, 'items').forEach(i => {
-    rows.push({col: 'items', id: i.id, kind: 'compra', ico: '🛒', t: i.desc, s: 'Compra', f: 'negocio', fecha: i.buyDate, u: i.u,
+    if(i.fromTradeOf) rows.push({col: 'items', id: i.id, kind: 'compra', ico: '📦', t: i.desc, s: 'Recibido en parte de pago', f: 'negocio', fecha: i.buyDate, u: i.u,
+      m: 0, amt: +i.buyPrice || 0});
+    else rows.push({col: 'items', id: i.id, kind: 'compra', ico: '🛒', t: i.desc, s: 'Compra', f: 'negocio', fecha: i.buyDate, u: i.u,
       m: i.buyPocket ? -(+i.buyPrice || 0) : 0, amt: +i.buyPrice || 0, pocket: i.buyPocket, extra: i.buyPocket ? '' : 'no salió de tus bolsillos'});
     if(i.status === 'sold'){
       const paid = i.sellPaid != null && i.sellPaid !== '' ? +i.sellPaid : +i.sellPrice || 0;
-      rows.push({col: 'items', id: i.id, kind: 'venta', ico: '💰', t: i.desc, s: paid < (+i.sellPrice || 0) ? 'Venta a crédito' : 'Venta', f: 'negocio',
+      const tv = +i.tradeInValor || 0, credito = paid < (+i.sellPrice || 0) - tv;
+      rows.push({col: 'items', id: i.id, kind: 'venta', ico: '💰', t: i.desc, f: 'negocio',
+        s: tv ? (credito ? 'Venta + parte de pago + crédito' : 'Venta + parte de pago') : credito ? 'Venta a crédito' : 'Venta',
         fecha: i.sellDate, u: i.u, m: paid, amt: +i.sellPrice || 0, pocket: i.sellPocket});
     }
   });
@@ -410,10 +414,10 @@ function renderStock(){
     if(!sold.length) h += emptyHTML('💰', 'Todavía no hay ventas. Cuando vendas, escribe en Inicio:', ['vendí ps5 1.5M efectivo', 'vendí tenis 250k fiado a juan']);
     else if(!list.length) h += emptyHTML('🔎', 'Nada coincide con “' + esc(UI.stQ) + '”.');
     h += list.slice(0, 150).map(i => {
-      const g = (+i.sellPrice || 0) - (+i.buyPrice || 0), paid = i.sellPaid != null && i.sellPaid !== '' ? +i.sellPaid : +i.sellPrice;
+      const g = (+i.sellPrice || 0) - (+i.buyPrice || 0), paid = (i.sellPaid != null && i.sellPaid !== '' ? +i.sellPaid : +i.sellPrice) + (+i.tradeInValor || 0);
       return `<div class="it" data-testid="item" data-id="${esc(i.id)}"><div class="it-h"><div style="min-width:0"><div class="it-n">${esc(i.desc)}</div>
         <div class="it-tags"><span class="tag t-b">${esc(i.cat || 'Otro')}</span><span class="tag t-g">vendido ${fdE(i.sellDate)}</span>
-        <span class="tag t-n">${daysBetween(i.buyDate, i.sellDate)} d</span>${paid < i.sellPrice ? '<span class="tag t-y">a crédito</span>' : ''}</div></div>
+        <span class="tag t-n">${daysBetween(i.buyDate, i.sellDate)} d</span>${paid < i.sellPrice ? '<span class="tag t-y">a crédito</span>' : ''}${i.tradeInValor ? '<span class="tag t-p">+ parte de pago</span>' : ''}</div></div>
         <button type="button" class="ibtn" data-a="editItem" data-id="${esc(i.id)}" aria-label="Editar">✏️</button></div>
         <div class="kv"><div><small>Costo</small><b>${full(i.buyPrice)}</b></div><div><small>Precio</small><b>${full(i.sellPrice)}</b></div>
         <div><small>Ganancia</small><b class="${g >= 0 ? 'pos' : 'neg'}">${full(g)}</b></div></div></div>`;
@@ -559,6 +563,8 @@ function renderBolsillos(){
 }
 
 /* ═════════ 3. FORMULARIOS (motor genérico + tipos) ═════════ */
+let SHEET = null;  // qué muestra la hoja: 'form' | 'lote' | null
+let LOTE = null;   // lote de "Esto entendí": {ops:[{kind,d}], fromQuick, touched}
 let F = null;   // formulario abierto: {kind, spec, d, v, fields, touched, fromQuick}
 const num = x => Math.round(+x || 0);
 const clean = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
@@ -599,7 +605,8 @@ function openForm(kind, d, opts){
   const fields = spec.fields(d);
   const v = {};
   fields.forEach(f => { let x = d[f.k]; if(x === undefined || x === null) x = f.val !== undefined ? f.val : ''; v[f.k] = x; });
-  F = {kind, spec, d, v, fields, touched: {}, fromQuick: !!(opts && opts.fromQuick)};
+  F = {kind, spec, d, v, fields, touched: {}, fromQuick: !!(opts && opts.fromQuick), lote: opts && opts.lote != null ? opts.lote : null};
+  SHEET = 'form';
   $('#sheetTitle').textContent = typeof spec.title === 'function' ? spec.title(d) : spec.title;
   $('#sheetBody').innerHTML = (spec.intro ? spec.intro(d) : '') + fields.map(fieldHTML).join('');
   $('#sheetFoot').innerHTML = (spec.del && d.id ? '<button type="button" class="btn b-r" data-a="formDel" data-testid="form-del">🗑️</button>' : '') +
@@ -619,13 +626,17 @@ function openForm(kind, d, opts){
 }
 
 function closeForm(){
-  F = null;
+  const backToLote = !!(F && F.lote != null && LOTE);
+  F = null; SHEET = null;
+  if(backToLote){ openLote(); return; }
   const sh = $('#sheet');
   sh.classList.remove('on'); sh.setAttribute('aria-hidden', 'true');
   document.body.style.overflow = '';
   if(document.activeElement && sh.contains(document.activeElement)) document.activeElement.blur();
-  setTimeout(() => { if(!F){ $('#sheetBody').innerHTML = ''; $('#sheetFoot').innerHTML = ''; $('#sheetTitle').textContent = ''; } }, 220);
+  setTimeout(() => { if(!SHEET){ $('#sheetBody').innerHTML = ''; $('#sheetFoot').innerHTML = ''; $('#sheetTitle').textContent = ''; } }, 220);
 }
+/* cierra lo que esté abierto en la hoja (formulario o lote) */
+function closeSheet(){ if(F) closeForm(); else if(LOTE) closeLote(); }
 
 const fieldVisible = f => !f.show || !!f.show(F.v);
 function refreshShow(){
@@ -665,6 +676,13 @@ function saveForm(){
   if(!F) return;
   // los montos se releen del DOM (por si el teclado no disparó "input")
   F.fields.forEach(f => { if(f.type === 'money'){ const el = $('#f-' + f.k); if(el) F.v[f.k] = el.value.trim() === '' ? '' : parseMoney(el.value); } });
+  if(F.lote != null && LOTE && LOTE.ops[F.lote]){       // editar una tarjeta del lote: no guarda todavía
+    const op = LOTE.ops[F.lote];
+    op.d = Object.assign({}, F.d, F.v);
+    LOTE.touched[F.lote] = true;
+    closeForm();
+    return;
+  }
   let res;
   try { res = F.spec.save(F.v, F.d, F) || {}; }
   catch(e){ console.error(e); toast('No pude guardar: ' + (e && e.message || e), {err: true}); return; }
@@ -710,7 +728,7 @@ function removeCobro(id){
 }
 const undoCobro = x => () => { if(!x) return; restore('cobros', x.c); x.abs.forEach(a => restore('abonos', a)); commit('Recuperado ✓'); };
 
-const venderOpts = () => [['', '— Elige —']].concat(stockItems().sort((a, b) => String(a.desc).localeCompare(String(b.desc)))
+const venderOpts = d => [['', '— Elige —']].concat(d && d.itemId === '__prev' ? [['__prev', (d.desc || 'Producto') + ' (lo de esta frase)']] : []).concat(stockItems().sort((a, b) => String(a.desc).localeCompare(String(b.desc)))
   .map(i => [i.id, i.desc + ' · costó ' + fmt(i.buyPrice)])).concat([['__nuevo', '➕ Producto no registrado']]);
 
 const FORMS = {
@@ -745,24 +763,32 @@ const FORMS = {
       if(d.sellPocket === undefined) d.sellPocket = defPocket();
       if(!d.completo) d.completo = 'si';
       if(d.itemId === undefined) d.itemId = '';
-      if(d.itemId && d.itemId !== '__nuevo' && !d.sellPrice){ const it = get('items', d.itemId); if(it && it.targetPrice) d.sellPrice = +it.targetPrice; }
+      if(d.tradeIn){ d.parte = 'si'; d.tiDesc = d.tradeIn.desc || ''; d.tiValor = +d.tradeIn.valor || ''; d.tiCat = d.tradeIn.cat || guessCat(d.tiDesc); delete d.tradeIn; }
+      if(!d.parte) d.parte = 'no';
+      if(!d.tiCat) d.tiCat = d.tiDesc ? guessCat(d.tiDesc) : 'Otro';
+      if(d.itemId && d.itemId !== '__nuevo' && d.itemId !== '__prev' && !d.sellPrice){ const it = get('items', d.itemId); if(it && it.targetPrice) d.sellPrice = +it.targetPrice; }
       if(d.itemId === '__nuevo' && !d.cat) d.cat = d.desc ? guessCat(d.desc) : 'Otro';
     },
-    intro: () => stockItems().length ? '' : '<p class="hint" style="margin-bottom:10px">No tienes productos en stock: elige <b>➕ Producto no registrado</b>.</p>',
-    fields: () => {
-      const nuevo = v => v.itemId === '__nuevo', fiado = v => v.completo === 'no';
+    intro: d => stockItems().length || d.itemId ? '' : '<p class="hint" style="margin-bottom:10px">No tienes productos en stock: elige <b>➕ Producto no registrado</b>.</p>',
+    fields: d => {
+      const nuevo = v => v.itemId === '__nuevo', fiado = v => v.completo === 'no', parte = v => v.parte === 'si';
       return [
-        {k: 'itemId', label: 'Producto', type: 'select', opts: venderOpts(), req: 1},
+        {k: 'itemId', label: 'Producto', type: 'select', opts: venderOpts(d), req: 1},
         {k: 'desc', label: 'Nombre del producto', type: 'text', ph: 'Ej: Tenis Jordan 1', show: nuevo},
         {k: 'buyPrice', label: '¿Cuánto te costó?', type: 'money', show: nuevo, note: 'Para calcular tu ganancia. No se descuenta de tus bolsillos.'},
         {k: 'cat', label: 'Categoría', type: 'select', opts: CATS.map(c => [c, c]), show: nuevo},
-        {k: 'sellPrice', label: 'Precio de venta', type: 'money', req: 1, ph: 'Ej: 1.5M'},
-        {k: 'completo', label: '¿Te pagó completo?', type: 'seg', opts: [['si', 'Sí, todo'], ['no', 'No, quedó debiendo']]},
+        {k: 'sellPrice', label: 'Precio de venta (en plata)', type: 'money', ph: 'Ej: 1.5M'},
+        {k: 'parte', label: '¿Recibiste algo como parte de pago?', type: 'seg', opts: [['no', 'No'], ['si', 'Sí, un producto']]},
+        {k: 'tiDesc', label: 'Producto que recibiste', type: 'text', ph: 'Ej: iPhone 16 Pro Max', show: parte},
+        {k: 'tiCat', label: 'Categoría de lo que recibiste', type: 'select', opts: CATS.map(c => [c, c]), show: parte},
+        {k: 'tiValor', label: '¿En cuánto lo valoras?', type: 'money', show: parte, ph: 'Ej: 2.100.000',
+          note: 'La venta total = plata + este valor. Entra a tu stock con este costo, sin salir de tus bolsillos.'},
+        {k: 'completo', label: '¿Te pagó completa la plata?', type: 'seg', opts: [['si', 'Sí, todo'], ['no', 'No, quedó debiendo']]},
         {k: 'sellPaid', label: '¿Cuánto te pagó ya?', type: 'money', show: fiado, ph: '0 si no pagó nada'},
         {k: 'cliente', label: 'Nombre del cliente', type: 'text', show: fiado, ph: 'Ej: Juan Pérez'},
         {k: 'tel', label: 'Celular (opcional)', type: 'tel', show: fiado},
         {k: 'compromiso', label: '¿Cuándo te paga? (opcional)', type: 'date', show: fiado},
-        {k: 'sellPocket', label: '¿A dónde entró la plata?', type: 'seg', opts: pocketOpts(), show: v => !fiado(v) || num(v.sellPaid) > 0},
+        {k: 'sellPocket', label: '¿A dónde entró la plata?', type: 'seg', opts: pocketOpts(), show: v => fiado(v) ? num(v.sellPaid) > 0 : num(v.sellPrice) > 0},
         {k: 'sellDate', label: 'Fecha', type: 'date'},
         {k: 'sellNotes', label: 'Nota (opcional)', type: 'text'}
       ];
@@ -770,36 +796,51 @@ const FORMS = {
     change: (k, v, set, F) => {
       if(k === 'itemId' && v.itemId && v.itemId !== '__nuevo' && !F.touched.sellPrice){ const it = get('items', v.itemId); if(it && it.targetPrice) set('sellPrice', +it.targetPrice); }
       if(k === 'desc' && !F.touched.cat) set('cat', guessCat(v.desc));
+      if(k === 'tiDesc' && !F.touched.tiCat) set('tiCat', guessCat(v.tiDesc));
     },
-    save: v => {
+    save: (v, d) => {
       let it;
       if(!v.itemId) return {err: 'Elige el producto que vendiste', k: 'itemId'};
-      const sp = num(v.sellPrice);
+      const sp = num(v.sellPrice);                                  // plata acordada
+      const parte = v.parte === 'si', V = parte ? num(v.tiValor) : 0, tiDesc = clean(v.tiDesc);
+      if(parte && !tiDesc) return {err: '¿Qué producto recibiste como parte de pago?', k: 'tiDesc'};
+      if(parte && V <= 0) return {err: '¿En cuánto valoras lo que recibiste?', k: 'tiValor'};
+      if(sp < 0 || sp + V <= 0) return {err: '¿En cuánto lo vendiste?', k: 'sellPrice'};
       if(v.itemId === '__nuevo'){
         const desc = clean(v.desc);
         if(!desc) return {err: 'Escribe el nombre del producto', k: 'desc'};
         if(num(v.buyPrice) <= 0) return {err: '¿Cuánto te costó? (para tu ganancia)', k: 'buyPrice'};
-        if(sp <= 0) return {err: '¿En cuánto lo vendiste?', k: 'sellPrice'};
         it = {id: uid(), desc, cat: v.cat || guessCat(desc), cond: 'bueno', notes: '', buyPrice: num(v.buyPrice), buyPocket: '', buyDate: v.sellDate || today(), targetPrice: null};
       } else {
         it = get('items', v.itemId);
         if(!it) return {err: 'Ese producto ya no está en stock', k: 'itemId'};
-        if(sp <= 0) return {err: '¿En cuánto lo vendiste?', k: 'sellPrice'};
       }
       const fiado = v.completo === 'no';
       const paid = fiado ? Math.min(num(v.sellPaid), sp) : sp;
       const cliente = clean(v.cliente);
       if(fiado && paid < sp && !cliente) return {err: '¿Quién te quedó debiendo?', k: 'cliente'};
+      if(paid > 0 && !v.sellPocket && d && d._lote) return {err: '¿A dónde entró la plata de la venta?', k: 'sellPocket'};
       const pocket = v.sellPocket || defPocket();
-      const rec = put('items', Object.assign({}, it, {status: 'sold', sellPrice: sp, sellPaid: paid, sellPocket: pocket, sellDate: v.sellDate || today(), sellNotes: clean(v.sellNotes)}));
+      const fecha = v.sellDate || today();
+      const venta = Object.assign({}, it, {status: 'sold', sellPrice: sp + V, sellPaid: paid, sellPocket: pocket, sellDate: fecha, sellNotes: clean(v.sellNotes)});
+      delete venta.tradeInId; delete venta.tradeInValor;
+      let recibido = null;
+      if(parte){
+        recibido = {id: uid(), desc: tiDesc, cat: v.tiCat || guessCat(tiDesc), cond: 'bueno', notes: 'Parte de pago por ' + it.desc, buyPrice: V, buyPocket: '',
+          buyDate: fecha, targetPrice: null, status: 'stock', fromTradeOf: venta.id};
+        venta.tradeInId = recibido.id; venta.tradeInValor = V;
+      }
+      const rec = put('items', venta);
+      if(recibido) put('items', recibido);
       let extra = '';
       if(paid < sp){
-        put('cobros', {nombre: titleCase(cliente), tel: clean(v.tel), total: sp - paid, pagado: 0, bolsillo: '', fecha: v.sellDate || today(),
+        put('cobros', {nombre: titleCase(cliente), tel: clean(v.tel), total: sp - paid, pagado: 0, bolsillo: '', fecha,
           compromiso: v.compromiso || '', notas: 'Venta: ' + it.desc, itemId: rec.id});
         extra = ` · ${titleCase(cliente)} te debe ${full(sp - paid)}`;
       }
-      const g = sp - (+it.buyPrice || 0);
-      return {rec, msg: `💰 ¡Vendido! Ganancia ${full(g)}${extra}`};
+      if(recibido) extra += ` · ${recibido.desc} entró al stock`;
+      const g = sp + V - (+it.buyPrice || 0);
+      return {rec, recibido, g, msg: `💰 ¡Vendido! Ganancia ${full(g)}${extra}`};
     }
   },
 
@@ -815,7 +856,8 @@ const FORMS = {
         {k: 'buyDate', label: 'Fecha de compra', type: 'date'}
       ];
       if(d.status === 'sold') f.push(
-        {k: 'sellPrice', label: 'Precio de venta', type: 'money', req: 1},
+        {k: 'sellPrice', label: d.tradeInValor ? 'Precio de venta total (plata + parte de pago)' : 'Precio de venta', type: 'money', req: 1,
+          note: d.tradeInValor ? 'Incluye ' + esc(full(d.tradeInValor)) + ' de la parte de pago.' : ''},
         {k: 'sellPocket', label: '¿A dónde entró la plata?', type: 'seg', opts: pocketOpts()},
         {k: 'sellDate', label: 'Fecha de venta', type: 'date'});
       else f.push({k: 'targetPrice', label: 'Precio meta (opcional)', type: 'money'});
@@ -831,11 +873,14 @@ const FORMS = {
       if(it.status === 'sold'){
         const sp = num(v.sellPrice);
         if(sp <= 0) return {err: 'El precio de venta debe ser mayor a 0', k: 'sellPrice'};
-        const wasFull = it.sellPaid == null || it.sellPaid === '' || +it.sellPaid >= +it.sellPrice;
-        it.sellPaid = wasFull ? sp : Math.min(+it.sellPaid, sp);
+        const tv = +it.tradeInValor || 0;                       // parte de pago: no es plata
+        if(sp < tv) return {err: 'El precio total no puede ser menor que la parte de pago (' + full(tv) + ')', k: 'sellPrice'};
+        const cash0 = (+it.sellPrice || 0) - tv, cash = sp - tv;
+        const wasFull = it.sellPaid == null || it.sellPaid === '' || +it.sellPaid >= cash0;
+        it.sellPaid = wasFull ? cash : Math.min(+it.sellPaid, cash);
         it.sellPrice = sp; it.sellPocket = v.sellPocket || it.sellPocket; it.sellDate = v.sellDate || it.sellDate;
         const c = L(DB, 'cobros').find(x => x.itemId === it.id);
-        if(c && !wasFull) put('cobros', Object.assign({}, c, {total: sp - it.sellPaid}));
+        if(c && !wasFull) put('cobros', Object.assign({}, c, {total: cash - it.sellPaid}));
       } else it.targetPrice = num(v.targetPrice) || null;
       put('items', it);
       return {rec: it, msg: '✓ ' + desc + ' actualizado'};
@@ -847,7 +892,8 @@ const FORMS = {
       if(!confirm(`¿Eliminar “${it.desc}”?` + (cs.length ? '\nTambién se borra el cobro de esa venta.' : '') + '\nSe borra la compra' + (it.status === 'sold' ? ' y la venta.' : '.'))) return null;
       remove('items', it.id);
       const gone = cs.map(c => removeCobro(c.id));
-      return {msg: '🗑️ ' + it.desc + ' eliminado', undo: () => { restore('items', it); gone.forEach(x => x && (restore('cobros', x.c), x.abs.forEach(a => restore('abonos', a)))); commit('Recuperado ✓'); }};
+      const ti = askTradeInRemoval(it);
+      return {msg: '🗑️ ' + it.desc + ' eliminado', undo: () => { restore('items', it); if(ti) restore('items', ti); gone.forEach(x => x && (restore('cobros', x.c), x.abs.forEach(a => restore('abonos', a)))); commit('Recuperado ✓'); }};
     }
   },
 
@@ -1126,11 +1172,22 @@ function unsellFromForm(){
   const cs = L(DB, 'cobros').filter(c => c.itemId === it.id);
   if(!confirm(`¿Devolver “${it.desc}” al stock? Se borra la venta` + (cs.length ? ' y su cobro.' : '.'))) return;
   const back = Object.assign({}, it, {status: 'stock'});
-  ['sellPrice', 'sellPaid', 'sellPocket', 'sellDate', 'sellNotes'].forEach(k => delete back[k]);
+  ['sellPrice', 'sellPaid', 'sellPocket', 'sellDate', 'sellNotes', 'tradeInId', 'tradeInValor'].forEach(k => delete back[k]);
   put('items', back);
   const gone = cs.map(c => removeCobro(c.id));
+  const ti = askTradeInRemoval(it);
   closeForm();
-  commit('↩️ ' + it.desc + ' volvió al stock', {undo: () => { put('items', it); gone.forEach(x => x && (restore('cobros', x.c), x.abs.forEach(a => restore('abonos', a)))); commit('Deshecho'); }});
+  commit('↩️ ' + it.desc + ' volvió al stock', {undo: () => { put('items', it); if(ti) restore('items', ti); gone.forEach(x => x && (restore('cobros', x.c), x.abs.forEach(a => restore('abonos', a)))); commit('Deshecho'); }});
+}
+
+/* Al borrar o devolver una venta con parte de pago: ¿borrar también lo recibido? (solo si sigue en stock) */
+function askTradeInRemoval(it){
+  const ti = it && it.tradeInId ? get('items', it.tradeInId) : null;
+  if(!ti) return null;
+  if(ti.status === 'sold'){ toast(ti.desc + ' (parte de pago) ya lo vendiste: se queda.'); return null; }
+  if(!confirm(`¿Eliminar también “${ti.desc}”, que recibiste como parte de pago?`)) return null;
+  remove('items', ti.id);
+  return ti;
 }
 
 function delBolsillo(id){
@@ -1173,6 +1230,208 @@ const ACT = {
   copy: el => copyText(el.dataset.t, el.dataset.n)
 };
 
+/* ═════════ 3b. LOTE "ESTO ENTENDÍ" (§11.4) ═════════ */
+const LOTE_POCKET = {compra: 'buyPocket', venta: 'sellPocket', gasto: 'bolsillo', ingreso: 'bolsillo', abono: 'bolsillo'};
+
+/* valores de formulario a partir de un borrador, sin DOM (mismos defaults que openForm) */
+function formValues(kind, d){
+  const spec = FORMS[kind], v = {};
+  spec.fields(d).forEach(f => { let x = d[f.k]; if(x === undefined || x === null) x = f.val !== undefined ? f.val : ''; v[f.k] = x; });
+  return v;
+}
+/* prep del formulario, pero el bolsillo que no se dijo queda SIN elegir (se elige con chips) */
+function lotePrep(kind, d0){
+  const d = Object.assign({}, d0), pk = LOTE_POCKET[kind], had = pk && d[pk] !== undefined;
+  if(FORMS[kind].prep) FORMS[kind].prep(d);
+  if(pk && !had) delete d[pk];
+  return d;
+}
+
+function startLote(arr, opts){
+  LOTE = {ops: arr.map(r => ({kind: r.kind, d: lotePrep(r.kind, r.d || {})})), fromQuick: !!(opts && opts.fromQuick), touched: {}};
+  openLote();
+}
+
+const loteCash = d => d.completo === 'no' ? Math.min(num(d.sellPaid), num(d.sellPrice)) : num(d.sellPrice);
+/* costo del producto vendido (para la ganancia) */
+function loteCost(i){
+  const d = LOTE.ops[i].d;
+  if(d.itemId === '__prev'){ const c = LOTE.ops.slice(0, i).reverse().find(o => o.kind === 'compra'); return c ? num(c.d.buyPrice) : null; }
+  if(d.itemId === '__nuevo') return num(d.buyPrice) || null;
+  const it = d.itemId ? get('items', d.itemId) : null;
+  return it ? +it.buyPrice || 0 : null;
+}
+function loteName(i){
+  const d = LOTE.ops[i].d;
+  if(d.itemId === '__prev' || d.itemId === '__nuevo') return d.desc || 'Producto';
+  const it = d.itemId ? get('items', d.itemId) : null;
+  return it ? it.desc : '';
+}
+
+/* primer dato que falta (o '' si todo está listo) */
+function loteMissing(){
+  for(let i = 0; i < LOTE.ops.length; i++){
+    const {kind, d} = LOTE.ops[i], n = '';
+    if(kind === 'compra'){
+      if(!clean(d.desc)) return n + 'Falta qué compraste';
+      if(num(d.buyPrice) <= 0) return n + 'Falta cuánto te costó ' + d.desc;
+      if(d.buyPocket === undefined) return n + '¿De dónde salió la plata de la compra?';
+    } else if(kind === 'venta'){
+      if(!d.itemId || (d.itemId !== '__prev' && d.itemId !== '__nuevo' && !get('items', d.itemId))) return n + 'Falta qué producto vendiste';
+      if(d.itemId === '__prev' && !LOTE.ops.slice(0, i).some(o => o.kind === 'compra')) return n + 'Falta qué producto vendiste';
+      if(d.itemId === '__nuevo' && num(d.buyPrice) <= 0) return n + 'Falta cuánto te costó ' + (d.desc || 'lo que vendiste');
+      const V = d.parte === 'si' ? num(d.tiValor) : 0;
+      if(num(d.sellPrice) + V <= 0) return n + 'Falta en cuánto lo vendiste';
+      if(d.parte === 'si' && (!clean(d.tiDesc) || V <= 0)) return n + 'Falta el valor de la parte de pago';
+      if(d.completo === 'no' && loteCash(d) < num(d.sellPrice) && !clean(d.cliente)) return n + '¿Quién te quedó debiendo?';
+      if(loteCash(d) > 0 && d.sellPocket === undefined) return n + '¿A dónde entró la plata de la venta?';
+    } else if(kind === 'gasto' || kind === 'ingreso'){
+      if(num(d.valor) <= 0) return n + 'Falta el valor del ' + kind;
+      if(d.bolsillo === undefined) return n + (kind === 'gasto' ? '¿De dónde salió el gasto?' : '¿A dónde entró el ingreso?');
+    } else if(kind === 'abono'){
+      if(!d.cobroId) return n + '¿Quién te abonó?';
+      if(num(d.monto) <= 0) return n + 'Falta cuánto te abonó';
+      if(d.bolsillo === undefined) return n + '¿A dónde entró el abono?';
+    } else if(kind === 'cobro'){
+      if(!clean(d.nombre)) return n + '¿Quién te debe?';
+      if(num(d.total) <= 0) return n + 'Falta cuánto te debe';
+    } else if(kind === 'transfer'){
+      if(num(d.monto) <= 0) return n + 'Falta cuánto moviste';
+      if(!d.from || !d.to || d.from === d.to) return n + 'Elige bolsillos distintos para mover';
+    }
+  }
+  return '';
+}
+
+function loteChips(i, k, opts, val){
+  return `<div class="opts" style="margin-top:8px">${opts.map(([o, l]) => `<button type="button" class="${val !== undefined && String(o) === String(val) ? 'on' : ''}"
+    data-a="lotePick" data-i="${i}" data-k="${k}" data-v="${esc(o)}" data-testid="lote-${i}-${k}-${esc(o || 'ninguno')}">${esc(l)}</button>`).join('')}</div>`;
+}
+
+function loteCardsHTML(){
+  const cards = [];
+  const card = (i, ico, html, extra, ac) => cards.push(`<div class="alert" data-testid="lote-card" data-i="${i}" style="--ac:${ac}">
+    <div class="alert-h"><div style="min-width:0;flex:1"><div class="alert-t" style="font-weight:500">${ico} ${html}</div></div>
+    ${i >= 0 ? `<div style="display:flex;gap:4px;flex-shrink:0"><button type="button" class="ibtn" data-a="loteEdit" data-i="${i}" aria-label="Editar">✏️</button>
+    <button type="button" class="ibtn" data-a="loteDel" data-i="${i}" aria-label="Quitar">✕</button></div>` : ''}</div>${extra || ''}</div>`);
+  LOTE.ops.forEach(({kind, d}, i) => {
+    const b = s => `<b>${esc(s)}</b>`, m = x => `<b class="mono">${full(x)}</b>`;
+    if(kind === 'compra'){
+      card(i, '🛒', `Compraste ${b(d.desc || '¿qué?')} · ${num(d.buyPrice) ? m(d.buyPrice) : '<span class="neg">falta el precio</span>'}`,
+        `<div class="meta" style="margin-top:8px">¿De dónde salió la plata?</div>` + loteChips(i, 'buyPocket', pocketOpts().concat([POCKET_NONE]), d.buyPocket), 'var(--B)');
+    } else if(kind === 'venta'){
+      const V = d.parte === 'si' ? num(d.tiValor) : 0, sp = num(d.sellPrice), cash = loteCash(d), cost = loteCost(i), name = loteName(i) || '¿qué producto?';
+      let txt = `Vendiste ${b(name)} en ${m(sp + V)}`;
+      if(V) txt += ` = ${full(sp)} en plata + ${esc(d.tiDesc)} (${full(V)})`;
+      let extra = '';
+      if(d.completo === 'no' && cash < sp) extra += `<div class="meta" style="margin-top:6px">🤝 ${esc(titleCase(d.cliente || '¿quién?'))} te queda debiendo ${full(sp - cash)}</div>`;
+      if(cash > 0) extra += `<div class="meta" style="margin-top:8px">¿A dónde entró la plata (${full(cash)})?</div>` + loteChips(i, 'sellPocket', pocketOpts(), d.sellPocket);
+      extra += `<div class="meta" style="margin-top:8px">${cost == null ? '<span class="yel">Falta el costo: toca ✏️</span>' : 'Ganancia <b class="' + (sp + V - cost >= 0 ? 'pos' : 'neg') + ' mono">' + full(sp + V - cost) + '</b>'}</div>`;
+      card(i, '💰', txt, extra, 'var(--G)');
+      if(V) card(-1, '📦', `${b(d.tiDesc)} entra a tu stock · costo ${m(V)}`, `<div class="meta" style="margin-top:4px">Parte de pago: no sale de tus bolsillos.</div>`, 'var(--P)');
+    } else if(kind === 'gasto' || kind === 'ingreso'){
+      const g = kind === 'gasto';
+      card(i, g ? '💸' : '➕', `${g ? 'Gasto' : 'Ingreso'} ${b(d.desc || d.cat || '')} · ${num(d.valor) ? m(d.valor) : '<span class="neg">falta el valor</span>'}${g ? ` <span class="tag t-n">${esc(d.cat || 'Otro')} · ${esc(d.tipo || '')}</span>` : ''}`,
+        `<div class="meta" style="margin-top:8px">${g ? '¿De dónde salió?' : '¿A dónde entró?'}</div>` + loteChips(i, 'bolsillo', pocketOpts(), d.bolsillo), g ? 'var(--R)' : 'var(--G)');
+    } else if(kind === 'abono'){
+      const c = cobrosPend(DB).find(x => x.id === d.cobroId);
+      card(i, '💵', `Abono de ${b(c ? c.nombre : (d._nombre || '¿quién?'))} · ${m(d.monto)}`,
+        `<div class="meta" style="margin-top:8px">¿A dónde entró?</div>` + loteChips(i, 'bolsillo', pocketOpts(), d.bolsillo), 'var(--G)');
+    } else if(kind === 'cobro'){
+      card(i, '🤝', `${b(d.nombre || '¿quién?')} te debe ${m(num(d.total) - num(d.pagado))}${d.bolsillo ? ' · préstamo desde ' + esc(pn(d.bolsillo)) : ''}`, '', 'var(--P)');
+    } else if(kind === 'transfer'){
+      card(i, '🔁', `Moviste ${m(d.monto)} de ${b(pn(d.from))} a ${b(pn(d.to))}`, '', 'var(--B)');
+    }
+  });
+  return cards.join('');
+}
+
+function openLote(){
+  if(!LOTE) return;
+  SHEET = 'lote'; F = null;
+  const body = $('#sheetBody'), top = body.scrollTop;
+  $('#sheetTitle').textContent = '🤖 Esto entendí';
+  const miss = loteMissing();
+  body.innerHTML = `<p class="hint" style="margin-bottom:10px">Revisa y toca <b>Guardar todo</b>. Con ✏️ cambias cualquier detalle.</p>` + loteCardsHTML() +
+    `<p class="hint ${miss ? 'yel' : 'pos'}" data-testid="lote-falta" style="margin:4px 0 8px">${miss ? '⚠️ ' + esc(miss) : '✓ Todo listo'}</p>`;
+  $('#sheetFoot').innerHTML = '<button type="button" class="btn b-gh" data-a="loteCancel" data-testid="lote-cancel">Cancelar</button>' +
+    `<button type="submit" class="btn b-g" data-testid="lote-save"${miss ? ' disabled' : ''}>Guardar todo</button>`;
+  const sh = $('#sheet');
+  sh.classList.add('on'); sh.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  try { if(!(history.state && history.state.sheet)) history.pushState({sheet: 1}, ''); } catch(e){}
+  body.scrollTop = top;
+}
+
+function closeLote(){
+  LOTE = null; SHEET = null;
+  const sh = $('#sheet');
+  sh.classList.remove('on'); sh.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+  setTimeout(() => { if(!SHEET){ $('#sheetBody').innerHTML = ''; $('#sheetFoot').innerHTML = ''; $('#sheetTitle').textContent = ''; } }, 220);
+}
+
+/* Deshacer de un lote: borra lo creado y devuelve lo modificado a como estaba */
+function undoFrom(before){
+  const changed = [];
+  COLS.forEach(c => {
+    const prev = new Map((before[c] || []).map(r => [r.id, r]));
+    (DB[c] || []).forEach(r => { const b = prev.get(r.id); if(!b) changed.push([c, r.id, null]); else if(b.u !== r.u) changed.push([c, r.id, b]); });
+  });
+  return () => {
+    changed.forEach(([c, id, b]) => { if(!b) remove(c, id); else put(c, Object.assign({}, b)); });
+    commit('↩️ Deshecho: ' + plural(changed.length, 'cambio'));
+  };
+}
+
+function saveLote(){
+  if(!LOTE) return;
+  const miss = loteMissing();
+  if(miss){ toast(miss, {err: true}); return; }
+  const before = JSON.parse(JSON.stringify(DB)), rev0 = UI.rev;
+  let prevItem = null, n = 0, gan = null, stockIn = [];
+  try {
+    for(const op of LOTE.ops){
+      const d = Object.assign({}, op.d, {_lote: 1});
+      if(op.kind === 'venta' && d.itemId === '__prev'){
+        if(!prevItem) throw new Error('No encontré la compra de esta frase');
+        d.itemId = prevItem;
+      }
+      const v = formValues(op.kind, d);
+      const res = FORMS[op.kind].save(v, d) || {};
+      if(res.err) throw new Error(res.err);
+      n++;
+      if(op.kind === 'compra' && res.rec) prevItem = res.rec.id;
+      if(op.kind === 'venta'){ gan = (gan || 0) + (res.g || 0); if(res.recibido) stockIn.push(res.recibido.desc); }
+    }
+  } catch(e){
+    DB = before; UI.rev = rev0;
+    toast(String(e && e.message || e), {err: true});
+    return;
+  }
+  const undo = undoFrom(before);
+  if(LOTE.fromQuick){ const q = $('#qInput'); if(q) q.value = ''; }
+  closeLote();
+  commit('✓ ' + plural(n + stockIn.length, 'movimiento guardado', 'movimientos guardados') + (gan != null ? ' · ganancia ' + full(gan) : '') + (stockIn.length ? ' · ' + stockIn.join(', ') + ' al stock' : ''),
+    {undo, ms: 8000});
+}
+
+Object.assign(ACT, {
+  lotePick: el => { const op = LOTE && LOTE.ops[+el.dataset.i]; if(!op) return; op.d[el.dataset.k] = el.dataset.v; openLote(); },
+  loteEdit: el => { const i = +el.dataset.i, op = LOTE && LOTE.ops[i]; if(!op) return; openForm(op.kind, op.d, {lote: i}); },
+  loteDel: el => {
+    const i = +el.dataset.i, op = LOTE && LOTE.ops[i];
+    if(!op) return;
+    if(op.kind === 'compra') LOTE.ops.slice(i + 1).forEach(o => {     // la venta de esa compra pasa a "producto no registrado"
+      if(o.kind === 'venta' && o.d.itemId === '__prev' && !LOTE.ops.slice(0, i).some(x => x.kind === 'compra'))
+        Object.assign(o.d, {itemId: '__nuevo', desc: op.d.desc, cat: op.d.cat, buyPrice: op.d.buyPrice});
+    });
+    LOTE.ops.splice(i, 1);
+    if(!LOTE.ops.length) closeLote(); else openLote();
+  },
+  loteCancel: () => closeLote()
+});
+
 /* ═════════ 4. REGISTRO RÁPIDO Y VOZ ═════════ */
 const quickCtx = () => ({
   bolsillos: pockets().map(p => ({id: p.id, nombre: p.nombre})),
@@ -1184,11 +1443,13 @@ function runQuick(text){
   text = clean(text);
   const q = $('#qInput');
   if(!text){ toast('Escribe algo como “almuerzo 18 mil”'); if(q) q.focus(); return; }
-  let r = null;
-  try { r = parseQuick(text, quickCtx()); } catch(e){ console.error(e); }
-  if(!r || !FORMS[r.kind]) r = {kind: 'gasto', d: {}};
+  let arr = null;
+  try { arr = parseQuickMulti(text, quickCtx()); } catch(e){ console.error(e); }
+  arr = (arr || []).filter(r => r && FORMS[r.kind]);
+  if(!arr.length) arr = [{kind: 'gasto', d: {}}];
   if(q) q.blur();
-  openForm(r.kind, Object.assign({}, r.d), {fromQuick: true});
+  if(arr.length === 1 && !arr[0].d.tradeIn) openForm(arr[0].kind, Object.assign({}, arr[0].d), {fromQuick: true});
+  else startLote(arr, {fromQuick: true});           // §11.4: varias operaciones → hoja "Esto entendí"
 }
 
 let REC = null;
@@ -1461,11 +1722,11 @@ function bindEvents(){
     const el = e.target;
     if(el && el.matches && el.matches('input,select,textarea')) setTimeout(() => { try { el.scrollIntoView({block: 'center', behavior: 'smooth'}); } catch(_){} }, 300);
   });
-  $('#sheetForm').addEventListener('submit', e => { e.preventDefault(); saveForm(); });
-  $('#sheetX').addEventListener('click', closeForm);
-  $('#sheet').addEventListener('click', e => { if(e.target === e.currentTarget) closeForm(); });
-  window.addEventListener('popstate', () => { if(F) closeForm(); });
-  document.addEventListener('keydown', e => { if(e.key === 'Escape' && F) closeForm(); });
+  $('#sheetForm').addEventListener('submit', e => { e.preventDefault(); if(SHEET === 'lote') saveLote(); else saveForm(); });
+  $('#sheetX').addEventListener('click', closeSheet);
+  $('#sheet').addEventListener('click', e => { if(e.target === e.currentTarget) closeSheet(); });
+  window.addEventListener('popstate', () => { if(F && F.lote != null) closeForm(); else closeSheet(); });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape') closeSheet(); });
 
   /* bienvenida */
   const onb = $('#onb');

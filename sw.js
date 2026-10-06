@@ -3,7 +3,7 @@
    · CDN (Chart.js en cdnjs, Google Fonts): caché primero.
    · NUNCA toca la nube (script.google.com / googleusercontent.com) ni métodos distintos de GET.
    Rutas relativas: la app vive en una subcarpeta (https://usuario.github.io/miapp/). */
-const CACHE_VERSION = 'miapp-v2.0.0';
+const CACHE_VERSION = 'miapp-v2.1.0';
 const SHELL = [
   './',
   'index.html',
