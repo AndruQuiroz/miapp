@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.3.0';
+const APP_VERSION = '2.4.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -768,7 +768,7 @@ const bateriaNum = x => { if(x === '' || x == null) return null; const n = Math.
 function equipoDe(v){
   const o = {}, b = bateriaNum(v.bateria);
   if(b != null && !isNaN(b)) o.bateria = b;
-  ['imei', 'almac', 'color'].forEach(k => { const x = k === 'almac' ? almacTxt(v[k]) : k === 'color' ? titleCase(clean(v[k])) : clean(v[k]); if(x) o[k] = x; });
+  ['imei', 'imei2', 'serie', 'almac', 'color'].forEach(k => { const x = k === 'almac' ? almacTxt(v[k]) : k === 'color' ? titleCase(clean(v[k])) : clean(v[k]); if(x) o[k] = x; });
   return o;
 }
 const equipoErr = v => { const b = bateriaNum(v.bateria); return b != null && (isNaN(b) || b < 0 || b > 100) ? {err: 'La batería va de 0 a 100 %', k: 'bateria'} : null; };
@@ -823,10 +823,11 @@ function fichaHTML(h){
   b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Historia</span></div><ol class="tl" data-testid="ficha-tl">${ev.map(e =>
     `<li><span class="tl-i">${e.ico}</span><div><b>${e.t}</b><div class="meta">${fdE(e.f)}${e.s ? ' · ' + e.s : ''}</div></div></li>`).join('')}</ol>`;
   /* datos del equipo y contactos */
-  const eq = [['IMEI', it.imei], ['Batería', it.bateria != null && it.bateria !== '' ? it.bateria + '%' : ''], ['Almacenamiento', it.almac], ['Color', it.color], ['Estado', it.cond]].filter(x => x[1]);
+  const eq = [['IMEI', it.imei], ['IMEI 2', it.imei2], ['Serie', it.serie], ['Batería', it.bateria != null && it.bateria !== '' ? it.bateria + '%' : ''], ['Almacenamiento', it.almac], ['Color', it.color], ['Estado', it.cond]].filter(x => x[1]);
   b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Datos del equipo</span></div>` + (eq.length
     ? eq.map(([l, v]) => `<div class="kvline"><span>${l}</span><b class="mono">${esc(v)}</b></div>`).join('')
-    : '<p class="hint">Sin datos (IMEI, batería…). Agrégalos con ✏️ Editar.</p>');
+    : '<p class="hint">Sin datos (IMEI, batería…). Súbelos con una foto o agrégalos con ✏️ Editar.</p>');
+  if(!it.del) b += `<button type="button" class="btn b-b full" style="margin-top:8px" data-a="ocrFicha" data-id="${esc(it.id)}" data-testid="ocr-ficha">📷 Leer datos de una foto</button>`;
   const ct = [['Se lo compraste a', h.proveedor, it.proveedorId], ['Se lo vendiste a', h.venta && h.venta.cliente, it.clienteId]].filter(x => x[1]);
   if(ct.length) b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Contactos</span></div>` + ct.map(([l, n, id]) =>
     `<div class="kvline"><span>${l}</span>${id && get('contactos', id) ? `<button type="button" class="lnk" data-a="goContacto" data-id="${esc(id)}">${esc(n)}</button>` : `<b>${esc(n)}</b>`}</div>`).join('');
@@ -883,6 +884,125 @@ function openRef(q){
   openInfo({kind: 'ref', q}, '📊 ¿Cuánto vale?', refHTML(r));
 }
 
+/* ── Ronda 6: leer IMEI, batería y almacenamiento de un pantallazo (OCR en el celular, app/ocr.js) ── */
+let OCR = null;   // {mode:'ficha'|'form', itemId, busy}
+const OCR_TIPS = 'Usa el pantallazo de <b>Ajustes → General → Información</b> (iPhone) o <b>Ajustes → Acerca del teléfono</b> (Android). Para la batería: <b>Ajustes → Batería → Estado y carga</b>. Puedes elegir varias fotos a la vez.';
+function ocrPick(mode, itemId){
+  if(OCR && OCR.busy) return toast('Ya estoy leyendo una foto…');
+  if(typeof leerImagenes !== 'function') return toast('El lector de fotos no está disponible', {err: true});
+  OCR = {mode, itemId: itemId || ''};
+  const inp = $('#ocrFile');
+  if(inp){ inp.value = ''; inp.click(); }
+}
+/* progreso legible a partir de los mensajes de Tesseract */
+function ocrProgress(n, primera){
+  let foto = 1, last = 0;
+  return m => {
+    const st = String(m && m.status || ''), p = Math.round((+m.progress || 0) * 100);
+    let txt;
+    if(/recogni/.test(st)){ if(p < last - 20 && foto < n) foto++; last = p; txt = `Leyendo foto ${foto} de ${n}… ${p}%`; }
+    else if(/load|download|initiali/.test(st)) txt = primera ? 'Descargando el lector (solo la primera vez, ~4 MB)… ' + p + '%' : 'Preparando el lector…';
+    else return;
+    ocrMsg(txt, /recogni/.test(st) ? ((foto - 1) + p / 100) / n : null);
+  };
+}
+function ocrMsg(txt, frac){
+  if(OCR && OCR.mode === 'form'){ const el = $('#ocrFormMsg'); if(el) el.textContent = txt; return; }
+  const t = $('#ocrTxt'), b = $('#ocrBar');
+  if(t) t.textContent = txt;
+  if(b && frac != null) b.style.width = Math.round(Math.min(1, frac) * 100) + '%';
+}
+async function ocrRun(files){
+  files = Array.from(files || []).filter(Boolean);
+  if(!OCR || !files.length) return;
+  const st = OCR, n = files.length, primera = typeof Tesseract === 'undefined';
+  st.busy = true;
+  if(st.mode === 'ficha'){
+    const it = get('items', st.itemId);
+    openInfo({kind: 'ocr', id: st.itemId}, '📷 Leyendo ' + (it ? it.desc : 'la foto'), `<p class="hint" id="ocrTxt" data-testid="ocr-progreso" style="margin-bottom:8px">${primera ? 'Descargando el lector (solo la primera vez, ~4 MB)…' : `Leyendo foto 1 de ${n}…`}</p>
+      <div class="bar"><i id="ocrBar" style="width:3%"></i></div><p class="hint" style="margin-top:10px">Todo se lee aquí en tu celular: la foto no se sube a ningún lado.</p>`,
+      '<button type="button" class="btn b-gh" disabled>Leyendo…</button>');
+  } else ocrMsg(primera ? 'Descargando el lector (solo la primera vez, ~4 MB)…' : `Leyendo foto 1 de ${n}…`);
+  let r;
+  try { r = await leerImagenes(files, ocrProgress(n, primera)); }
+  catch(e){
+    st.busy = false; OCR = null;
+    const sin = navigator.onLine === false || /descargar|internet|network|fetch|load/i.test(String(e && e.message || e));
+    toast(sin ? 'No pude descargar el lector de fotos. Revisa tu internet e intenta otra vez (después funciona sin señal).' : 'No pude leer la foto: ' + (e && e.message || e), {err: true, ms: 6000});
+    if(st.mode === 'ficha'){ if(get('items', st.itemId)) openFicha(st.itemId); else closeInfo(); } else { const m = $('#ocrFormMsg'); if(m) m.textContent = ''; }
+    return;
+  }
+  st.busy = false; OCR = null;
+  r = r || {};
+  if(st.mode === 'form') ocrToForm(r);
+  else ocrConfirm(st.itemId, r);
+}
+const OCR_KEYS = [['imei', 'IMEI'], ['imei2', 'IMEI 2'], ['bateria', 'Batería %'], ['almac', 'Almacenamiento'], ['serie', 'Número de serie']];
+const ocrVal = (k, x) => x == null || x === '' ? '' : k === 'almac' ? almacTxt(String(x)) : String(x);
+const ocrModelWarn = (r, desc) => {
+  if(!r.modelo || !desc) return '';
+  const a = normModelo(r.modelo), b = normModelo(desc);
+  return a && b && a !== b ? `La foto parece de un ${r.modelo} y este producto es ${desc}: ¿seguro?` : '';
+};
+/* desde Compra / Editar: llena los campos del formulario */
+function ocrToForm(r){
+  if(!F) return;
+  const got = [];
+  OCR_KEYS.forEach(([k, l]) => { const x = ocrVal(k, r[k]); if(x && k in F.v){ setVal(k, x); F.touched[k] = true; got.push(l.replace(' %', '') + ' ' + x + (k === 'bateria' ? '%' : '')); } });
+  refreshShow();
+  const warn = ocrModelWarn(r, F.v.desc);
+  const msg = $('#ocrFormMsg'); if(msg) msg.textContent = got.length ? '✅ ' + got.join(' · ') : '';
+  if(got.length) toast('📷 Encontré: ' + got.join(' · ') + (warn ? ' — ' + warn : ''), {ms: 6000, err: !!warn});
+  else toast('No encontré IMEI, batería ni almacenamiento en esa foto. Usa el pantallazo de Ajustes → General → Información.', {err: true, ms: 6000});
+}
+/* desde la ficha: hoja "Esto encontré" (cada dato editable y con su casilla) */
+function ocrConfirm(itemId, r){
+  const it = get('items', itemId);
+  if(!it) return closeInfo();
+  const found = OCR_KEYS.filter(([k]) => ocrVal(k, r[k]));
+  const textoBtn = r.texto ? `<button type="button" class="btn b-gh full" style="margin-top:8px" data-a="ocrTexto" data-testid="ocr-ver-texto">Ver el texto que leí</button>
+    <pre class="raw" id="ocrRaw" hidden data-testid="ocr-texto">${esc(r.texto)}</pre>` : '';
+  if(!found.length){
+    openInfo({kind: 'ocr', id: itemId}, '📷 No encontré datos', `<p data-testid="ocr-nada" style="margin-bottom:8px">No encontré IMEI, batería ni almacenamiento en ${r.texto ? 'esa foto' : 'esa foto (no pude leer texto)'}.</p>
+      <p class="hint">${OCR_TIPS}</p>${textoBtn}`,
+      `<button type="button" class="btn b-gh" data-a="ficha" data-id="${esc(itemId)}">Volver</button>
+       <button type="button" class="btn b-b" data-a="ocrFicha" data-id="${esc(itemId)}">📷 Otra foto</button>`);
+    return;
+  }
+  const warn = ocrModelWarn(r, it.desc);
+  let b = warn ? `<div class="alert" style="--ac:var(--Y)" data-testid="ocr-modelo"><div class="alert-t" style="font-size:14px">🤔 ${esc(warn)}</div></div>` : '';
+  b += `<p class="hint" style="margin-bottom:10px">Revisa y toca <b>Guardar</b>. Puedes corregir cualquier dato o quitarle la ✓.</p>`;
+  b += found.map(([k, l]) => {
+    const x = ocrVal(k, r[k]), antes = it[k] != null && it[k] !== '' ? String(it[k]) : '', igual = antes === x;
+    return `<div class="ocrrow" data-testid="ocr-row" data-k="${k}"><label class="ocrchk"><input type="checkbox" id="ocr-on-${k}" data-testid="ocr-on-${k}"${igual ? '' : ' checked'}> <b>${esc(l)}</b>
+      ${/^imei/.test(k) ? '<span class="tag t-g">✅ IMEI válido</span>' : ''}${igual ? '<span class="tag t-n">ya lo tenías</span>' : ''}</label>
+      <input class="in${/^imei|bateria/.test(k) ? ' mono' : ''}" id="ocr-v-${k}" data-testid="ocr-v-${k}" type="text" ${/^imei|bateria/.test(k) ? 'inputmode="numeric"' : ''} autocomplete="off" value="${esc(x)}">
+      ${antes && !igual ? `<span class="note" data-testid="ocr-antes-${k}">antes: ${esc(antes)}${k === 'bateria' ? '%' : ''}</span>` : ''}</div>`;
+  }).join('') + textoBtn;
+  openInfo({kind: 'ocr', id: itemId, r}, '📷 Esto encontré', b,
+    `<button type="button" class="btn b-gh" data-a="ficha" data-id="${esc(itemId)}" data-testid="ocr-cancel">Cancelar</button>
+     <button type="button" class="btn b-g" data-a="ocrGuardar" data-id="${esc(itemId)}" data-testid="ocr-save">Guardar</button>`);
+}
+function ocrGuardar(itemId){
+  const it = get('items', itemId);
+  if(!it) return closeInfo();
+  const o = {}, done = [];
+  for(const [k, l] of OCR_KEYS){
+    const on = $('#ocr-on-' + k), inp = $('#ocr-v-' + k);
+    if(!on || !inp || !on.checked) continue;
+    let x = clean(inp.value);
+    if(!x) continue;
+    if(/^imei/.test(k)){ x = x.replace(/\D/g, ''); if(x.length !== 15){ toast('El ' + l + ' debe tener 15 dígitos', {err: true}); inp.focus(); return; } }
+    if(k === 'bateria'){ const n = bateriaNum(x); if(isNaN(n) || n < 0 || n > 100){ toast('La batería va de 0 a 100 %', {err: true}); inp.focus(); return; } o[k] = n; done.push('🔋 ' + n + '%'); continue; }
+    if(k === 'almac') x = almacTxt(x);
+    o[k] = x; done.push(k === 'almac' ? x : k === 'serie' ? 'serie' : l);
+  }
+  if(!done.length) return toast('Marca al menos un dato para guardar', {err: true});
+  put('items', Object.assign({}, it, o));
+  openFicha(itemId);
+  commit('📷 ' + it.desc + ': ' + done.join(' · '));
+}
+
 /* ═════════ 3. FORMULARIOS (motor genérico + tipos) ═════════ */
 let SHEET = null;  // qué muestra la hoja: 'form' | 'lote' | null
 let LOTE = null;   // lote de "Esto entendí": {ops:[{kind,d}], fromQuick, touched}
@@ -918,6 +1038,9 @@ function fieldHTML(f){
     inp = `<div class="hint">${f.html || ''}</div>`;
   } else if(f.type === 'ref'){                        // §14.4: referencia de precios dentro del formulario
     inp = `<div class="refbox" ${common}></div>`;
+  } else if(f.type === 'ocrbtn'){                     // ronda 6: leer IMEI/batería/almacenamiento de un pantallazo
+    return `<div class="fld" data-fk="${f.k}"><button type="button" class="btn b-b full" data-a="ocrForm" data-testid="ocr-form">📷 Leer datos de una foto</button>
+      <span class="note" id="ocrFormMsg" data-testid="ocr-form-msg"></span></div>`;
   } else if(f.type === 'fold'){                       // sección plegable ("Datos del equipo")
     return `<div class="fld" data-fk="${f.k}"><button type="button" class="fold" ${common} data-fold="${f.k}" aria-expanded="${val ? 'true' : 'false'}">${esc(f.text)} <span aria-hidden="true">${val ? '▴' : '▾'}</span></button></div>`;
   } else {
@@ -1203,12 +1326,15 @@ const quickRuleTxt = r => [r.gkind ? 'es ' + (KIND_TXT[r.gkind] || r.gkind) : ''
 const eqShow = v => !!v._equipo;
 const EQ_FIELDS = () => [
   {k: '_equipo', type: 'fold', text: '📱 Datos del equipo (IMEI, batería, almacenamiento, color)'},
+  {k: '_ocr', type: 'ocrbtn', show: eqShow},
   {k: 'imei', label: 'IMEI (opcional)', type: 'text', im: 'numeric', cap: 'off', ph: '15 dígitos (*#06#)', show: eqShow},
+  {k: 'imei2', label: 'IMEI 2', type: 'text', im: 'numeric', cap: 'off', ph: 'Si tiene doble SIM', show: v => eqShow(v) && !!clean(v.imei2)},
   {k: 'bateria', label: 'Batería %', type: 'text', im: 'numeric', ph: 'Ej: 89', show: eqShow},
   {k: 'almac', label: 'Almacenamiento', type: 'text', cap: 'off', ph: 'Ej: 128GB', show: eqShow},
-  {k: 'color', label: 'Color', type: 'text', ph: 'Ej: Azul', show: eqShow}
+  {k: 'color', label: 'Color', type: 'text', ph: 'Ej: Azul', show: eqShow},
+  {k: 'serie', label: 'Número de serie', type: 'text', cap: 'characters', ph: 'Opcional', show: v => eqShow(v) && !!clean(v.serie)}
 ];
-const prepEquipo = d => { if(!d._equipo && ['imei', 'bateria', 'almac', 'color'].some(k => d[k] != null && d[k] !== '')) d._equipo = '1'; };
+const prepEquipo = d => { if(!d._equipo && ['imei', 'imei2', 'bateria', 'almac', 'color', 'serie'].some(k => d[k] != null && d[k] !== '')) d._equipo = '1'; };
 const CONTACT_FIELDS = (k, label, ph) => [
   {k, label, type: 'text', list: 'dl-contactos', cap: 'words', ph},
   {k: k + 'Nuevo', label: '¿Lo guardo en tus contactos?', type: 'seg', val: 'no', opts: [['no', 'No'], ['si', 'Sí, guardarlo']], show: v => !!clean(v[k]) && !contactoPor(v[k])}
@@ -1398,7 +1524,7 @@ const FORMS = {
         const c = L(DB, 'cobros').find(x => x.itemId === it.id);
         if(c && !wasFull) put('cobros', Object.assign({}, c, {total: cash - it.sellPaid}));
       } else it.targetPrice = num(v.targetPrice) || null;
-      ['imei', 'bateria', 'almac', 'color', 'proveedor', 'proveedorId'].forEach(k => delete it[k]);   // §14.4: datos del equipo y contactos
+      ['imei', 'imei2', 'serie', 'bateria', 'almac', 'color', 'proveedor', 'proveedorId'].forEach(k => delete it[k]);   // §14.4: datos del equipo y contactos
       Object.assign(it, equipoDe(v));
       const prov = linkContacto(v.proveedor, v.proveedorNuevo, 'proveedor');
       if(prov.nombre) it.proveedor = prov.nombre;
@@ -1920,6 +2046,10 @@ const ACT = {
   form: el => openForm(el.dataset.k, {}),
   /* §14.4 */
   ficha: el => openFicha(el.dataset.id),
+  ocrFicha: el => ocrPick('ficha', el.dataset.id),
+  ocrForm: () => { if(F) ocrPick('form', F.d && F.d.id); },
+  ocrGuardar: el => ocrGuardar(el.dataset.id),
+  ocrTexto: () => { const p = $('#ocrRaw'); if(p) p.hidden = !p.hidden; },
   infoClose: () => closeInfo(),
   fichaVender: el => openForm('venta', {itemId: el.dataset.id}, {back: backToFicha(el.dataset.id)}),
   fichaEditar: el => { const it = get('items', el.dataset.id); if(it) openForm('editItem', it, {back: backToFicha(it.id)}); },
@@ -2469,6 +2599,7 @@ function bindEvents(){
   $('#dnSeg').addEventListener('click', e => { const b = e.target.closest('button[data-seg]'); if(b){ UI.dnSeg = b.dataset.seg; renderDinero(); } });
   $('#mvFondo').addEventListener('change', e => { UI.mvFondo = e.target.value; renderMovs(); });
   $('#refQ').addEventListener('input', e => { UI.refQ = e.target.value; renderRefQuick(); });
+  $('#ocrFile').addEventListener('change', e => { const fs = Array.from(e.target.files || []); if(fs.length) ocrRun(fs); else OCR = null; });
   $('#refForm').addEventListener('submit', e => { e.preventDefault(); ACT.refBuscar(); });
   $('#ctQ').addEventListener('input', e => { UI.ctQ = e.target.value; renderContactos(); });
   document.addEventListener('keydown', e => { if((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[role=button][data-a]')){ e.preventDefault(); e.target.click(); } });

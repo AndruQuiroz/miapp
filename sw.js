@@ -3,11 +3,12 @@
    · CDN (Chart.js en cdnjs, Google Fonts): caché primero.
    · NUNCA toca la nube (script.google.com / googleusercontent.com) ni métodos distintos de GET.
    Rutas relativas: la app vive en una subcarpeta (https://usuario.github.io/miapp/). */
-const CACHE_VERSION = 'miapp-v2.3.0';
+const CACHE_VERSION = 'miapp-v2.4.0';
 const SHELL = [
   './',
   'index.html',
   'core.js',
+  'ocr.js',
   'quick.js',
   'app.js',
   'manifest.json',
@@ -16,6 +17,7 @@ const SHELL = [
   'icon-maskable-512.png'
 ];
 const CDN = /^https:\/\/(cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
+const OCR = /(^|\.)(cdn\.jsdelivr\.net|tessdata\.projectnaptha\.com)$/;
 const NUBE = /(^|\.)(script\.google\.com|googleusercontent\.com)$/;
 
 self.addEventListener('install', e => {
@@ -44,6 +46,7 @@ self.addEventListener('fetch', e => {
   let url;
   try { url = new URL(req.url); } catch(_) { return; }
   if(NUBE.test(url.hostname)) return;              // la nube nunca pasa por el caché
+  if(OCR.test(url.hostname) || /\.wasm(\.gz)?$/.test(url.pathname) || /\/npm\/tesseract/.test(url.pathname)) return;   // lector de fotos: Tesseract guarda su idioma en IndexedDB
   if(url.origin === self.location.origin){
     e.respondWith(networkFirst(req));
   } else if(CDN.test(req.url)){
