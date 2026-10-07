@@ -145,6 +145,7 @@ button.card{width:100%;font:inherit;color:inherit}
 .t-b{background:var(--Bbg);color:var(--B);border-color:rgba(77,166,255,.2)}
 .t-p{background:var(--Pbg);color:var(--P);border-color:rgba(181,122,255,.2)}
 .t-n{background:var(--bg4);color:var(--ink2);border-color:var(--bdr2)}
+.t-o{background:var(--Obg);color:var(--O);border-color:rgba(255,140,66,.25)}
 
 /* ── Listas de movimientos ── */
 .list{background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;margin-bottom:12px}
@@ -162,6 +163,9 @@ button.card{width:100%;font:inherit;color:inherit}
 /* ── Controles ── */
 .seg{display:flex;background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);padding:3px;gap:3px;margin-bottom:12px}
 .seg button{flex:1;min-height:44px;border:1px solid transparent;background:transparent;color:var(--ink3);border-radius:var(--r2);font-size:14px;font-weight:600}
+.seg button{padding:2px 4px;line-height:1.15}
+#masSeg button,#dnSeg button{font-size:13px}
+#masSeg button{flex:1 1 auto;white-space:nowrap;padding:2px 6px}
 .seg button.on{background:var(--bg4);color:var(--ink);border-color:var(--bdr2);box-shadow:0 1px 6px rgba(0,0,0,.5)}
 .fils{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;scrollbar-width:none}
 .fils::-webkit-scrollbar{display:none}
@@ -238,6 +242,22 @@ input[type=date].in{color-scheme:dark}
 .kswitch::-webkit-scrollbar{display:none}
 .kswitch span{flex-shrink:0;font-size:12px;color:var(--ink3)}
 .kswitch .chip{min-height:36px;font-family:var(--body);font-size:12.5px;padding:0 10px}
+
+/* ── Ronda 5: ficha, referencia, insight ── */
+.tap{cursor:pointer;min-height:44px}
+.lnk{background:none;border:none;color:var(--B);font:inherit;font-weight:600;padding:0;min-height:0;text-decoration:underline;text-underline-offset:2px}
+.kvline .lnk{min-height:44px}
+.tl{list-style:none;margin:0 0 4px;padding:0;position:relative}
+.tl li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;position:relative}
+.tl li:not(:last-child)::before{content:'';position:absolute;left:18px;top:42px;bottom:-6px;width:2px;background:var(--bdr2)}
+.tl-i{width:38px;height:38px;border-radius:10px;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.tl b{font-size:14.5px;font-weight:600}
+.refline{display:flex;align-items:center;gap:6px;width:100%;min-height:44px;padding:8px 12px;border-radius:var(--r2);border:1px dashed rgba(16,217,138,.45);background:var(--Gbg);color:var(--ink2);font-size:13.5px;font-weight:500;text-align:left;line-height:1.35}
+.refdet{background:var(--bg3);border:1px solid var(--bdr2);border-radius:var(--r2);padding:8px 12px;margin-top:6px}
+.refdet .btn{margin-top:8px}
+.refcard{margin:-4px 0 12px}
+.fold{width:100%;min-height:44px;border-radius:var(--r2);border:1px dashed var(--bdr3);background:transparent;color:var(--ink2);font-size:14px;font-weight:600;text-align:left;padding:0 12px}
+.insight{font-size:13px;line-height:1.45;color:var(--ink2);background:var(--bg2);border:1px solid var(--bdr);border-left:3px solid var(--B);border-radius:var(--r2);padding:8px 11px;margin:-2px 0 12px}
 
 /* ── Gráfico ── */
 .chart{position:relative;height:220px}
@@ -333,6 +353,8 @@ body:has(.wrap input:focus) .tabs{display:none}
   <!-- ═════ STOCK ═════ -->
   <section class="view" id="v-stock" data-view="stock">
     <h2 class="ttl">Stock</h2>
+    <form id="refForm" autocomplete="off" role="search"><input class="search refq" id="refQ" data-testid="ref-q" type="search" placeholder="💲 ¿Cuánto vale un…? (ej: iphone 13)" autocomplete="off" aria-label="¿Cuánto vale un producto?"></form>
+    <div id="refBody"></div>
     <input class="search" id="stSearch" data-testid="stock-search" type="search" placeholder="🔎 Buscar producto…" autocomplete="off" aria-label="Buscar producto">
     <div class="seg" id="stSeg">
       <button type="button" data-seg="stock" class="on">En stock</button>
@@ -372,6 +394,7 @@ body:has(.wrap input:focus) .tabs{display:none}
     <div class="seg" id="masSeg">
       <button type="button" data-seg="analisis" class="on">📊 Análisis</button>
       <button type="button" data-seg="dinero" data-testid="mas-dinero">💰 Dinero</button>
+      <button type="button" data-seg="contactos" data-testid="mas-contactos">👥 Contactos</button>
       <button type="button" data-seg="ajustes">⚙️ Ajustes</button>
     </div>
 
@@ -395,9 +418,16 @@ body:has(.wrap input:focus) .tabs{display:none}
       <div class="seg" id="dnSeg">
         <button type="button" data-seg="donde" class="on" data-testid="dn-donde">📍 ¿Dónde está?</button>
         <button type="button" data-seg="para" data-testid="dn-para">🎯 ¿Para qué es?</button>
+        <button type="button" data-seg="topes" data-testid="dn-topes">🚦 Topes</button>
       </div>
       <div id="bolBody"></div>
       <div id="fonBody" hidden></div>
+      <div id="topBody" hidden></div>
+    </div>
+
+    <div id="m-contactos" data-mas="contactos" hidden>
+      <input class="search" id="ctQ" data-testid="ct-q" type="search" placeholder="🔎 Buscar contacto…" autocomplete="off" aria-label="Buscar contacto">
+      <div id="ctBody"></div>
     </div>
 
     <div id="m-ajustes" data-mas="ajustes" hidden>

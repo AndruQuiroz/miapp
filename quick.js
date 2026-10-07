@@ -600,6 +600,7 @@ const QK_CANON = [
   // "el 16 pro max lo vendí en 2.5" / "el 15 pro se lo vendí a juan" → "vendí el …"
   [new RegExp('^\\s*((?:el|la|los|las)\\s+[^,;]+?)\\s+(?:se\\s+)?(?:lo|la|los|las)\\s+' + qkTl('(?:vendi|vendimos|cambie)') + QB1, 'iu'), (m, o) => 'vendí ' + o],
   [qkRx('(?:me\\s+)?cambi(?:aron|e|é)\\s+((?:el|la|los|las)\\s+.+?)\\s+por\\s+(un|una|unos|unas)'), (m, a, b) => `vendí ${a} y me dieron ${b}`],
+  [qkRx('(?:que\\s+)?(?:se\\s+)?(?:estima|calculo|creo|digamos)(?:\\s+que)?\\s+(?:vale|valdra|esta|anda)(?:\\s+en)?|que\\s+(?:se\\s+)?estima\\s+en|estimad[oa]s?\\s+en|estimad[oa]s?|tasad[oa]s?\\s+en|que\\s+vale|que\\s+valdra|que\\s+cuesta|que\\s+anda\\s+en|recibid[oa]s?\\s+en|tomad[oa]s?\\s+en'), 'valorado en'],
   [qkRx('me\\s+compraron|me\\s+compro|mi\\s+socio\\s+vendio|vendio|vendieron|vendimos'), 'vendí'],
   [qkRx('que\\s+(?:compre|vendi|tengo|tenia)(?=\\s*[,;]|\\s*$|\\s+\\$?\\d)'), ' '],
   [qkRx('le\\s+cambie\\s+(?:la|el|los|las)\\s+(pantalla|bateria|tapa|camara|puerto|display|vidrio|modulo|pin|flex)'), (m, x) => 'gasté arreglo ' + x],
@@ -771,7 +772,7 @@ const QK_PAY_V = /(^| )(gaste|pague|le pague|le di|cobro|me cobro|me pago|me pag
 function qkClauseCat(cl, ctx, prevCat){
   const n = normKey(cl);
   if(!QK_TRADE_V.test(n) && (QK_PAY_V.test(n) || guessGCat(cl) !== 'Otro') && !(prevCat && QK_CAROS.includes(prevCat) && /^(me abono|abono|me pago|pago|me consigno|consigno|me dio|me paso|me dieron|me pagaron|quedo|me quedo|me debe|recibi)( |$)/.test(n))) return 'Otro';
-  let c = guessCat(cl);
+  let c = /^\s*\$?[\d.,]+\s*$/.test(cl) ? 'Otro' : guessCat(cl);
   if(c === 'Otro' && /(^| )(un|una|el|del|al|otro|este)\s+1[1-7]( pro| max| plus| mini|$| )/.test(n)) c = 'Celulares';
   if(c === 'Otro' && /(^| )(vendi|venta|vendido|vendida)( |$)/.test(n)){
     const r = qkMatchStock(n, (ctx && ctx.stock) || []);
@@ -881,7 +882,7 @@ function qkDate(seg){
   if(!fecha){ const re = new RegExp(qkTl('((?:lo|la|los|las)\\s+(?:pague|compre|vendi|gaste|saque|recibi|consigne))\\s+el\\s+(\\d{1,2})') + '(?!\\d|\\s*(?:mil|k|lucas|palos|millones|pro|max|plus|mini))', 'iu');
     const m = s.match(re); if(m){ const f = fixDay(+m[2]); if(f){ fecha = f; s = s.replace(m[0], ' ' + m[1] + ' '); } } }
   // "el 5 pagué la luz": "el N" al inicio, seguido de un verbo → fecha (si no, "el 15" es un iPhone 15)
-  take(new RegExp('^\\s*el\\s+(\\d{1,2})\\s+(?=' + qkTl('(?:pague|compre|vendi|gaste|recibi|saque|retire|pase|consigne|aparte|envio|envío|preste|fie|abono|abonó)') + ')', 'iu'), (m, d) => fixDay(+d));
+  take(new RegExp('^\\s*el\\s+(?!1[1-7]\\s+(?:vend|compr))(\\d{1,2})\\s+(?=' + qkTl('(?:pague|compre|vendi|gaste|recibi|saque|retire|pase|consigne|aparte|envio|envío|preste|fie|abono|abonó)') + ')', 'iu'), (m, d) => fixDay(+d));
   return {seg: qkSp(s), fecha};
 }
 
@@ -1186,10 +1187,37 @@ function qkFix(r, seg, ctx, info){
 
 /* parseQuickMulti(texto, ctx) → [{kind, d}, …]   (§11 + §12 + §13)
    ctx = {bolsillos:[{id,nombre,alias}], fondos:[{id,nombre,alias}], stock:[{id,desc,cat}], cobros:[{id,nombre}], reglas:[…]} */
+const QK_COLORES = 'negro|negra|blanco|blanca|azul|rojo|roja|verde|morado|morada|lila|rosado|rosada|dorado|dorada|plateado|plateada|gris|grafito|titanio|natural|amarillo|amarilla|naranja|beige|crema|cafe|purpura|medianoche|blue|black|white|gold|silver';
+function qkEquipo(t){
+  const eq = {};
+  t = t.replace(qkRx('(?:con\\s+)?(?:la\\s+)?bater[ií]a\\s+(?:al|en|de|del)?\\s*(\\d{2,3})\\s*%?|(?:con\\s+)?(?:el\\s+)?(\\d{2,3})\\s*%\\s*(?:de\\s+)?(?:bater[ií]a|pila|salud)?|(?:con\\s+)?(\\d{2,3})\\s+de\\s+(?:bater[ií]a|pila|salud)'), (m, a, b, c) => {
+    const v = +(a || b || c); if(v > 100 || v < 30) return m; eq.bateria = v; return ' '; });
+  t = t.replace(qkRx('(?:de\\s+)?(64|128|256|512|1024|1)\\s*(gb|gigas|g|tb|teras?)'), (m, a, u) => { eq.almac = a + (/^t/i.test(u) ? 'TB' : 'GB'); return ' '; });
+  if(!eq.almac) t = t.replace(qkRx('de\\s+(64|128|256|512)(?!\\s*(?:mil|k|lucas|barras))'), (m, a) => { eq.almac = a + 'GB'; return ' '; });
+  t = t.replace(qkRx('imei\\s*:?\\s*(\\d{14,16})'), (m, a) => { eq.imei = a; return ' '; });
+  const c = t.match(qkRx('(?:color\\s+)?(' + QK_COLORES + ')', 'iu'));
+  if(c) eq.color = c[1].toLowerCase();
+  return {t: qkSp(t), eq};
+}
+const QK_GENERIC_P = /^(man|pelao|pelado|senor|señor|senora|señora|cliente|amigo|amiga|muchacho|muchacha|tipo|chino|chica|chico|vecino|vecina|parcero|loco|socio)$/;
+const QK_NOT_NAME = /^(nequi|efectivo|credito|cuotas|plazo|fin|pagar|consignar|transferencia|la|el|los|las|un|una|mitad|resto|nequi|cajero|precio|buen|mi)$/;
+function qkPersona(seg0, kind){
+  // venta: "a mateo", "al mono", "a la vecina"; compra: "a un man de bello", "a la vecina", "de un cliente"
+  const re = kind === 'compra' ? /(?:^|\s)(?:a|al|de)\s+(?:(un|una|el|la|don|doña|dona|mi)\s+)?(\p{L}{3,})(?:\s+(?:de|del)\s+(\p{L}{3,}))?/u : /(?:^|\s)(?:a|al)\s+(?:(la|el|don|doña|dona|mi)\s+)?(\p{L}{3,})(?:\s+(\p{L}{3,}))?/u;
+  const m = seg0.match(re);
+  if(!m) return '';
+  const w = normKey(m[2]);
+  if(QK_NOT_NAME.test(w) || guessCat(m[2]) !== 'Otro' || /^\d/.test(w)) return '';
+  if(QK_GENERIC_P.test(w)) return kind === 'compra' ? qkSp((m[2] + (m[3] ? ' de ' + m[3] : ''))) : '';
+  const extra = m[3] && !QK_NOT_NAME.test(normKey(m[3])) && /^\p{Lu}/u.test(m[3]) ? ' ' + m[3] : '';
+  return qkName((/^(don|doña|dona)$/i.test(m[1] || '') ? m[1] + ' ' : '') + m[2] + extra);
+}
+
 function parseQuickMulti(texto, ctx){
   ctx = ctx || {};
   const bols = ctx.bolsillos || [];
   let t = qkClean(texto);
+  const EQ = qkEquipo(t); t = EQ.t;
   t = qkCanon(t);
   t = qkNumWords(t);
   t = qkUnits(t);
@@ -1289,6 +1317,21 @@ function parseQuickMulti(texto, ctx){
       const sm = qkMatchStock(segs[si - 1], ctx.stock || []);
       if(sm.item){ D.itemId = sm.item.id; delete D.desc; delete D.cat; const lo = out[out.length - 1];
         if(lo && !(lo.d.valor || lo.d.buyPrice || lo.d.sellPrice || lo.d.monto || lo.d.total)){ out.pop(); said.pop(); } }
+    }
+    if(r.kind === 'compra'){
+      Object.keys(EQ.eq).forEach(k => { if(D[k] == null) D[k] = EQ.eq[k]; });
+      const pv = qkPersona(seg0, 'compra'); if(pv && !D.proveedor) D.proveedor = qkCap(pv);
+      if(D.desc){ // la descripción no repite al vendedor ni el color
+        let ds = ' ' + D.desc + ' ';
+        if(D.proveedor) normKey(D.proveedor).split(' ').forEach(w => { if(w.length > 2) ds = ds.replace(new RegExp('\\s' + w + '(?=\\s)', 'iu'), ' '); });
+        ds = ds.replace(qkRx('(?:color\\s+)?(?:' + QK_COLORES + ')'), ' ').replace(/\s(?:a|al|de|del|un|una|don|doña)(?=\s*$)/iu, ' ');
+        D.desc = qkCap(qkSp(ds)) || D.desc;
+      }
+    }
+    if(r.kind === 'venta' && !D.cliente){ const cl = qkPersona(seg0, 'venta'); if(cl) D.cliente = cl; }
+    if(r.kind === 'gasto' && !D.itemId){
+      const sm = qkMatchStock(normKey(seg0).replace(/(^| )(moto|carro|celular|cel|telefono|tenis|portatil|computador|consola|reloj)(?= |$)/g, ' '), ctx.stock || [], true);
+      if(sm.item && (D.tipo === 'negocio' || /^(Envíos|Empaques|Comisiones|Publicidad)$/.test(D.cat || ''))){ D.itemId = sm.item.id; D.tipo = 'negocio'; }
     }
     r = qkApplyRules(r, seg0, ctx.reglas, !!m0);
     push(r, !!m0);

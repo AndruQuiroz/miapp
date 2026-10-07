@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -26,7 +26,7 @@ const fdE = d => esc(fd(d));
 let DB = null;          // base en memoria (fuente de verdad local)
 let CFG = null;         // {url, key, onboarded, last}
 const UI = {
-  view: 'inicio', stSeg: 'stock', stQ: '', mvMonth: '', mvF: 'todos', mvFondo: '', masSeg: 'analisis', dnSeg: 'donde', anMonth: '',
+  view: 'inicio', stSeg: 'stock', stQ: '', mvMonth: '', mvF: 'todos', mvFondo: '', masSeg: 'analisis', dnSeg: 'donde', anMonth: '', refQ: '', ctQ: '',
   sync: 'off', syncMsg: '', rev: 0, onb: '', chart: null, pendAll: false, pendOpen: Object.create(null)
 };
 
@@ -272,7 +272,8 @@ function movs(){
         fecha: i.sellDate, u: i.u, m: paid, amt: +i.sellPrice || 0, pocket: i.sellPocket});
     }
   });
-  L(DB, 'gastos').forEach(g => rows.push({col: 'gastos', id: g.id, ico: g.tipo === 'negocio' ? '🏢' : '👤', t: g.desc || g.cat || 'Gasto',
+  const itDesc = id => { const x = (DB.items || []).find(i => i.id === id); return x ? x.desc : ''; };
+  L(DB, 'gastos').forEach(g => rows.push({col: 'gastos', id: g.id, ico: g.itemId ? '🔧' : g.tipo === 'negocio' ? '🏢' : '👤', t: g.desc || g.cat || 'Gasto', extra: g.itemId ? 'de ' + itDesc(g.itemId) : '',
     s: (g.tipo === 'negocio' ? 'Negocio' : 'Personal') + ' · ' + (g.cat || 'Otro'), f: g.tipo === 'negocio' ? 'negocio' : 'personal', fecha: g.fecha, u: g.u, m: -(+g.valor || 0), pocket: g.bolsillo}));
   L(DB, 'ingresos').forEach(g => rows.push({col: 'ingresos', id: g.id, ico: '➕', t: g.desc || 'Ingreso', s: 'Ingreso', f: 'personal', fecha: g.fecha, u: g.u, m: +g.valor || 0, pocket: g.bolsillo}));
   L(DB, 'abonos').forEach(a => { const c = cob[a.cobroId];
@@ -336,6 +337,14 @@ function renderInicio(){
       <button type="button" class="btn b-gh" data-a="abonar" data-id="${esc(c.id)}">+ Abono</button></div></div>`;
   });
 
+  /* (c2) topes cerca o pasados (§14.4) */
+  topesEstado(DB, ym).filter(x => x.estado !== 'ok').sort((a, b) => b.pct - a.pct).forEach(x => {
+    const pas = x.estado === 'pasado', nom = topeNombre(x.tope);
+    h += `<button type="button" class="alert card" style="--ac:${pas ? 'var(--R)' : 'var(--Y)'};display:block" data-a="goTopes" data-testid="tope-alerta" data-estado="${x.estado}">
+      <div class="alert-t">${pas ? `🚨 Te pasaste del tope de ${esc(nom)} por ${full(x.gastado - x.tope.limite)}` : `⚠️ Ya gastaste el ${x.pct}% de tu tope de ${esc(nom)}`}</div>
+      <div class="meta">${full(x.gastado)} de ${full(x.tope.limite)} este mes${pas ? '' : ' · te quedan ' + full(x.tope.limite - x.gastado)}</div></button>`;
+  });
+
   /* (d) productos quietos */
   const quietos = stock.filter(i => daysIn(i) >= 30).sort((a, b) => daysIn(b) - daysIn(a));
   if(quietos.length) h += `<button type="button" class="alert card" style="--ac:var(--O);display:block" data-a="goStock">
@@ -352,6 +361,10 @@ function renderInicio(){
     <button type="button" class="card a-y" data-a="goStock"><div class="lbl">En stock</div><div class="val">${fmt(capital)}</div><div class="sub">${plural(stock.length, 'producto')}</div></button>
     <button type="button" class="card a-p" data-a="goCobros"><div class="lbl">Te deben</div><div class="val">${fmt(debe)}</div><div class="sub">${full(debe)} · ${plural(cp.length, 'persona')}</div></button>
   </div>`;
+  /* §14.4: comentario del mes, sin tener que buscarlo */
+  let ins = '';
+  try { ins = monthInsight(DB, ym) || ''; } catch(e){ ins = ''; }
+  if(ins) h += `<p class="insight" data-testid="insight">${esc(ins)}</p>`;
 
   /* bolsillos */
   h += `<div class="pocks">${pockets().map(p => `<button type="button" class="pock" data-a="ajustar" data-id="${esc(p.id)}" title="Ajustar saldo">
@@ -439,12 +452,12 @@ function renderStock(){
       `<div class="btns"><button type="button" class="btn b-g" data-a="form" data-k="compra">🛒 Registrar compra</button></div>`);
     else if(!list.length) h += emptyHTML('🔎', 'Nada coincide con “' + esc(UI.stQ) + '”.');
     h += list.map(i => {
-      const d = daysBetween(i.buyDate, t), meta = +i.targetPrice || 0;
+      const d = daysBetween(i.buyDate, t), meta = +i.targetPrice || 0, ct = costoReal(i), ex = ct - (+i.buyPrice || 0);
       const dc = d >= 60 ? 't-r' : d >= 30 ? 't-y' : 't-n';
-      return `<div class="it" data-testid="item" data-id="${esc(i.id)}"><div class="it-h"><div style="min-width:0"><div class="it-n">${esc(i.desc)}</div>
-        <div class="it-tags"><span class="tag t-b">${esc(i.cat || 'Otro')}</span><span class="tag ${dc}">${d} ${d === 1 ? 'día' : 'días'}</span>${i.cond ? `<span class="tag t-n">${esc(i.cond)}</span>` : ''}</div></div></div>
-        <div class="kv"><div><small>Costo</small><b>${full(i.buyPrice)}</b></div><div><small>Meta</small><b>${meta ? full(meta) : '—'}</b></div>
-        <div><small>Ganarías</small><b class="${meta ? (meta - i.buyPrice >= 0 ? 'pos' : 'neg') : 'mut'}">${meta ? full(meta - i.buyPrice) : '—'}</b></div></div>
+      return `<div class="it" data-testid="item" data-id="${esc(i.id)}"><div class="it-h tap" data-a="ficha" data-id="${esc(i.id)}" role="button" tabindex="0" aria-label="Ver ficha de ${esc(i.desc)}"><div style="min-width:0"><div class="it-n">${esc(i.desc)} <span class="mut" aria-hidden="true">›</span></div>
+        <div class="it-tags"><span class="tag t-b">${esc(i.cat || 'Otro')}</span><span class="tag ${dc}">${d} ${d === 1 ? 'día' : 'días'}</span>${i.cond ? `<span class="tag t-n">${esc(i.cond)}</span>` : ''}${ex ? `<span class="tag t-o">🔧 +${fmt(ex)}</span>` : ''}${i.bateria != null && i.bateria !== '' ? `<span class="tag t-n">🔋 ${esc(i.bateria)}%</span>` : ''}</div></div></div>
+        <div class="kv"><div><small>${ex ? 'Costo real' : 'Costo'}</small><b>${full(ct)}</b></div><div><small>Meta</small><b>${meta ? full(meta) : '—'}</b></div>
+        <div><small>Ganarías</small><b class="${meta ? (meta - ct >= 0 ? 'pos' : 'neg') : 'mut'}">${meta ? full(meta - ct) : '—'}</b></div></div>
         ${i.notes ? `<div class="meta" style="margin-top:6px">${esc(i.notes)}</div>` : ''}
         <div class="btns"><button type="button" class="btn b-g" data-a="vender" data-id="${esc(i.id)}">💰 Vender</button>
         <button type="button" class="btn b-gh" data-a="editItem" data-id="${esc(i.id)}">✏️ Editar</button></div></div>`;
@@ -452,7 +465,7 @@ function renderStock(){
   } else {
     const sold = all.filter(i => i.status === 'sold');
     const list = sold.filter(match).sort((a, b) => String(b.sellDate || '').localeCompare(String(a.sellDate || '')) || (+b.u || 0) - (+a.u || 0));
-    const gan = sum(sold, 'sellPrice') - sum(sold, 'buyPrice');
+    const gan = sum(sold, 'sellPrice') - sum(sold.map(costoReal));
     h += `<div class="tot">
       <div class="card a-g"><div class="lbl">Vendidos</div><div class="val">${sold.length}</div></div>
       <div class="card a-b"><div class="lbl">Ventas</div><div class="val">${fmt(sum(sold, 'sellPrice'))}</div></div>
@@ -460,17 +473,32 @@ function renderStock(){
     if(!sold.length) h += emptyHTML('💰', 'Todavía no hay ventas. Cuando vendas, escribe en Inicio:', ['vendí ps5 1.5M efectivo', 'vendí tenis 250k fiado a juan']);
     else if(!list.length) h += emptyHTML('🔎', 'Nada coincide con “' + esc(UI.stQ) + '”.');
     h += list.slice(0, 150).map(i => {
-      const g = (+i.sellPrice || 0) - (+i.buyPrice || 0), paid = (i.sellPaid != null && i.sellPaid !== '' ? +i.sellPaid : +i.sellPrice) + (+i.tradeInValor || 0);
-      return `<div class="it" data-testid="item" data-id="${esc(i.id)}"><div class="it-h"><div style="min-width:0"><div class="it-n">${esc(i.desc)}</div>
+      const ct = costoReal(i), g = (+i.sellPrice || 0) - ct, paid = (i.sellPaid != null && i.sellPaid !== '' ? +i.sellPaid : +i.sellPrice) + (+i.tradeInValor || 0);
+      return `<div class="it" data-testid="item" data-id="${esc(i.id)}"><div class="it-h"><div style="min-width:0" class="tap" data-a="ficha" data-id="${esc(i.id)}" role="button" tabindex="0"><div class="it-n">${esc(i.desc)} <span class="mut" aria-hidden="true">›</span></div>
         <div class="it-tags"><span class="tag t-b">${esc(i.cat || 'Otro')}</span><span class="tag t-g">vendido ${fdE(i.sellDate)}</span>
         <span class="tag t-n">${daysBetween(i.buyDate, i.sellDate)} d</span>${paid < i.sellPrice ? '<span class="tag t-y">a crédito</span>' : ''}${i.tradeInValor ? '<span class="tag t-p">+ parte de pago</span>' : ''}</div></div>
         <button type="button" class="ibtn" data-a="editItem" data-id="${esc(i.id)}" aria-label="Editar">✏️</button></div>
-        <div class="kv"><div><small>Costo</small><b>${full(i.buyPrice)}</b></div><div><small>Precio</small><b>${full(i.sellPrice)}</b></div>
+        <div class="kv"><div><small>${ct !== +i.buyPrice ? 'Costo real' : 'Costo'}</small><b>${full(ct)}</b></div><div><small>Precio</small><b>${full(i.sellPrice)}</b></div>
         <div><small>Ganancia</small><b class="${g >= 0 ? 'pos' : 'neg'}">${full(g)}</b></div></div></div>`;
     }).join('');
     if(list.length > 150) h += `<p class="hint">Mostrando las 150 más recientes. Usa el buscador.</p>`;
   }
   $('#stockBody').innerHTML = h;
+  renderRefQuick();
+}
+
+/* Stock → "¿Cuánto vale un…?" (§14.4) */
+function renderRefQuick(){
+  const el = $('#refBody');
+  if(!el) return;
+  const q = clean(UI.refQ);
+  if(q.length < 2){ el.innerHTML = ''; return; }
+  const r = priceRef(DB, q);
+  el.innerHTML = r ? `<button type="button" class="card a-g refcard" data-a="verRef" data-q="${esc(q)}" data-testid="ref-quick">
+      <div class="lbl">${esc(r.modelo)} · ${plural(r.items.length, 'registro')}</div>
+      <div class="val">${r.sugeridoVenta ? '~' + full(r.sugeridoVenta) : '—'}</div>
+      <div class="sub">${esc(refLine(r))}${r.gananciaProm != null ? ' · ganas ~' + fmt(r.gananciaProm) : ''} · ver todo ›</div></button>`
+    : `<p class="hint" style="margin:-4px 0 12px" data-testid="ref-quick-none">No has comprado ni vendido “${esc(q)}” todavía.</p>`;
 }
 
 /* ── Movimientos ── */
@@ -537,6 +565,7 @@ function renderMas(){
   $$('#v-mas [data-mas]').forEach(d => { d.hidden = d.dataset.mas !== UI.masSeg; });
   if(UI.masSeg === 'analisis') renderAnalisis();
   else if(UI.masSeg === 'dinero') renderDinero();
+  else if(UI.masSeg === 'contactos') renderContactos();
   else renderAjustes();
 }
 
@@ -606,12 +635,14 @@ function renderAnalisis(){
 
 /* ── Más → Dinero (§13.4): ¿Dónde está? (bolsillos) · ¿Para qué es? (apartados) + chequeo de cuadre ── */
 function renderDinero(){
-  if(UI.dnSeg !== 'para') UI.dnSeg = 'donde';
+  if(UI.dnSeg !== 'para' && UI.dnSeg !== 'topes') UI.dnSeg = 'donde';
   $$('#dnSeg button').forEach(b => b.classList.toggle('on', b.dataset.seg === UI.dnSeg));
   $('#bolBody').hidden = UI.dnSeg !== 'donde';
   $('#fonBody').hidden = UI.dnSeg !== 'para';
-  renderCuadre();
-  if(UI.dnSeg === 'donde') renderBolsillos(); else renderFondos();
+  $('#topBody').hidden = UI.dnSeg !== 'topes';
+  $('#dnCheck').hidden = UI.dnSeg === 'topes';
+  if(UI.dnSeg !== 'topes') renderCuadre();
+  if(UI.dnSeg === 'donde') renderBolsillos(); else if(UI.dnSeg === 'para') renderFondos(); else renderTopes();
 }
 
 /* "Total en bolsillos $X = Total en apartados $X ✅" — si no cuadra (no debería) ⚠️ + Reportar */
@@ -639,6 +670,52 @@ function renderBolsillos(){
     <p class="hint">El saldo se calcula solo con lo que registras; si no cuadra con Nequi, usa <b>Ajustar</b>. Solo puedes eliminar un bolsillo sin movimientos.
     Con ✏️ cambias su nombre y las palabras con que lo nombras al escribir (“el nequi de mi pareja”).</p>`;
   $('#bolBody').innerHTML = h;
+}
+
+/* Más → Dinero → Topes (§14.4): gastado / límite del mes con barra; sugerir "Todo lo personal" */
+function renderTopes(){
+  const ym = today().slice(0, 7), est = topesEstado(DB, ym);
+  let h = `<p class="hint" style="margin-bottom:10px">Lo máximo que quieres gastar al mes. Te aviso en Inicio al llegar al 80% y si te pasas. Mes: <b>${esc(ymLabel(ym))}</b>.</p>`;
+  h += est.sort((a, b) => b.pct - a.pct).map(x => {
+    const c = x.estado === 'pasado' ? 'var(--R)' : x.estado === 'cerca' ? 'var(--Y)' : 'var(--G)';
+    return `<div class="it" data-testid="tope" data-id="${esc(x.tope.id)}" data-estado="${x.estado}"><div class="it-h"><div style="min-width:0"><div class="it-n">${x.tope.cat === '__personal' ? '👤 Todo lo personal' : esc(x.tope.cat)}</div>
+      <div class="meta">${full(x.gastado)} de ${full(x.tope.limite)} · ${x.estado === 'pasado' ? `<b class="neg">te pasaste por ${full(x.gastado - x.tope.limite)}</b>` : `te quedan ${full(x.tope.limite - x.gastado)}`}</div></div>
+      <div class="alert-m ${x.estado === 'pasado' ? 'neg' : x.estado === 'cerca' ? 'yel' : ''}">${x.pct}%</div></div>
+      <div class="bar"><i style="width:${Math.min(100, x.pct)}%;background:${c}"></i></div>
+      <div class="btns"><button type="button" class="btn b-gh" data-a="editTope" data-id="${esc(x.tope.id)}">✏️ Editar</button></div></div>`;
+  }).join('');
+  if(!est.some(x => x.tope.cat === '__personal')){
+    /* sugerencia: promedio de lo personal de los 3 meses anteriores, redondeado a $50.000 */
+    const prev = [1, 2, 3].map(n => monthStats(DB, ymAdd(ym, -n)).gP).filter(x => x > 0);
+    const sug = prev.length ? Math.ceil(sum(prev) / prev.length / 50000) * 50000 : 0;
+    h += `<div class="alert" style="--ac:var(--B)" data-testid="tope-sugerido"><div class="alert-t">💡 Ponle un tope a todo lo personal</div>
+      <div class="meta">${sug ? `En promedio gastas ${full(sug)} al mes en lo personal. Empieza con eso y ajústalo.` : 'Así sabes cuánto puedes gastar sin tocar la plata del negocio.'}</div>
+      <div class="pbtns"><button type="button" class="btn b-b wide" data-a="nuevoTope" data-cat="__personal" data-lim="${sug || ''}">🚦 Crear tope personal${sug ? ' de ' + full(sug) : ''}</button></div></div>`;
+  }
+  h += `<div class="btns" style="margin-bottom:12px"><button type="button" class="btn b-g" data-a="nuevoTope" data-testid="tope-nuevo">+ Nuevo tope</button></div>`;
+  $('#topBody').innerHTML = h;
+}
+
+/* Más → Contactos (§14.4): buscador, compras / ventas / ganancia / debe, WhatsApp y editar */
+function renderContactos(){
+  const q = normNombre(UI.ctQ), all = contactos();
+  const list = all.filter(c => !q || normNombre([c.nombre, c.tel, c.notas].join(' ')).includes(q));
+  let h = `<div class="btns" style="margin:0 0 12px"><button type="button" class="btn b-g" data-a="nuevoContacto" data-testid="contacto-nuevo">+ Nuevo contacto</button></div>`;
+  if(!all.length) h += emptyHTML('👥', 'Aún no tienes contactos. Guárdalos al comprar o vender (“¿Lo guardo en tus contactos?”) o créalos aquí.');
+  else if(!list.length) h += emptyHTML('🔎', 'Nadie coincide con “' + esc(UI.ctQ) + '”.');
+  h += list.map(c => {
+    const s = contactoStats(DB, c.id) || {compras: {n: 0, total: 0}, ventas: {n: 0, total: 0, ganancia: 0}, debe: 0, ultimo: null};
+    return `<div class="it" data-testid="contacto" data-id="${esc(c.id)}"><div class="it-h"><div style="min-width:0"><div class="it-n">${esc(c.nombre)}</div>
+      <div class="it-tags"><span class="tag ${c.tipo === 'proveedor' ? 't-p' : c.tipo === 'ambos' ? 't-b' : 't-g'}">${esc(CT_TIPO[c.tipo] || 'Cliente')}</span>${c.tel ? `<span class="tag t-n">${esc(c.tel)}</span>` : ''}${s.debe ? `<span class="tag t-y">te debe ${esc(fmt(s.debe))}</span>` : ''}</div></div></div>
+      ${c.notas ? `<div class="meta" style="margin-top:6px">${esc(c.notas)}</div>` : ''}
+      <div class="kv" data-testid="contacto-stats"><div><small>Le compraste</small><b>${s.compras.n ? s.compras.n + ' · ' + fmt(s.compras.total) : '—'}</b></div>
+      <div><small>Le vendiste</small><b>${s.ventas.n ? s.ventas.n + ' · ' + fmt(s.ventas.total) : '—'}</b></div>
+      <div><small>${s.debe ? 'Te debe' : 'Ganancia'}</small><b class="${s.debe ? 'yel' : s.ventas.ganancia > 0 ? 'pos' : s.ventas.ganancia < 0 ? 'neg' : 'mut'}">${s.debe ? full(s.debe) : s.ventas.n ? full(s.ventas.ganancia) : '—'}</b></div></div>
+      ${s.ultimo ? `<div class="meta" style="margin-top:6px">Último: ${esc(s.ultimo.tipo)} ${s.ultimo.desc ? '· ' + esc(s.ultimo.desc) : ''} · ${fdE(s.ultimo.fecha)}</div>` : ''}
+      <div class="btns"><button type="button" class="btn b-wa" data-a="waContacto" data-id="${esc(c.id)}">💬 WhatsApp</button>
+      <button type="button" class="ibtn" data-a="editContacto" data-id="${esc(c.id)}" aria-label="Editar">✏️</button></div></div>`;
+  }).join('');
+  $('#ctBody').innerHTML = h;
 }
 
 /* por qué un apartado está en negativo, en palabras */
@@ -669,6 +746,141 @@ function renderFondos(){
     <p class="hint">Un apartado dice <b>para qué</b> es la plata, no dónde está. Compras y ventas van a <b>💼 Negocio</b>; gastos personales e ingresos a <b>👤 Personal</b>.
     En cada formulario lo cambias con <b>“Plata de:”</b>. Repartir mueve plata entre apartados sin sacarla del bolsillo. Solo puedes eliminar un apartado en $0 y sin movimientos.</p>`;
   $('#fonBody').innerHTML = h;
+}
+
+/* ═════════ 2b. RONDA 5 (§14.4): ficha del producto, referencia de precios, contactos y topes ═════════ */
+const costoReal = it => costoItem(DB, it);
+const contactos = () => L(DB, 'contactos').slice().sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || '')));
+const contactoPor = nombre => { const n = normNombre(nombre); return n ? L(DB, 'contactos').find(c => normNombre(c.nombre) === n) || null : null; };
+const CT_TIPO = {cliente: 'Cliente', proveedor: 'Proveedor', ambos: 'Cliente y proveedor'};
+/* nombre escrito en un formulario → {id?, nombre}; crea el contacto si el usuario lo pidió; si ya existía con el otro rol → 'ambos' */
+function linkContacto(nombre, crear, tipo){
+  nombre = titleCase(clean(nombre));
+  if(!nombre) return {};
+  let c = contactoPor(nombre);
+  if(!c && crear === 'si') c = put('contactos', {nombre, tel: '', tipo, notas: ''});
+  if(c && c.tipo !== tipo && c.tipo !== 'ambos') c = put('contactos', Object.assign({}, c, {tipo: 'ambos'}));
+  return c ? {id: c.id, nombre: c.nombre} : {nombre};
+}
+/* datos del equipo: "128" → "128GB", batería 0–100 */
+const almacTxt = s => { s = clean(s); return /^\d+$/.test(s) ? s + 'GB' : s.replace(/\s*(gb|tb)$/i, m => m.trim().toUpperCase()); };
+const bateriaNum = x => { if(x === '' || x == null) return null; const n = Math.round(parseFloat(String(x).replace(',', '.'))); return isNaN(n) ? NaN : n; };
+function equipoDe(v){
+  const o = {}, b = bateriaNum(v.bateria);
+  if(b != null && !isNaN(b)) o.bateria = b;
+  ['imei', 'almac', 'color'].forEach(k => { const x = k === 'almac' ? almacTxt(v[k]) : k === 'color' ? titleCase(clean(v[k])) : clean(v[k]); if(x) o[k] = x; });
+  return o;
+}
+const equipoErr = v => { const b = bateriaNum(v.bateria); return b != null && (isNaN(b) || b < 0 || b > 100) ? {err: 'La batería va de 0 a 100 %', k: 'bateria'} : null; };
+
+/* ── hoja de información (ficha y referencia): usa la misma hoja inferior que los formularios ── */
+let INFO = null;   // {kind:'ficha'|'ref', id|q}
+function showSheet(){
+  const sh = $('#sheet');
+  sh.classList.add('on'); sh.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  try { if(!(history.state && history.state.sheet)) history.pushState({sheet: 1}, ''); } catch(e){}
+}
+function openInfo(info, title, body, foot){
+  F = null; LOTE = null; INFO = info; SHEET = 'info';
+  $('#sheetTitle').textContent = title;
+  $('#sheetBody').innerHTML = body;
+  $('#sheetFoot').innerHTML = foot || '<button type="button" class="btn b-gh" data-a="infoClose">Cerrar</button>';
+  $('#sheetBody').scrollTop = 0;
+  showSheet();
+}
+function closeInfo(){
+  INFO = null; SHEET = null;
+  const sh = $('#sheet');
+  sh.classList.remove('on'); sh.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+  setTimeout(() => { if(!SHEET){ $('#sheetBody').innerHTML = ''; $('#sheetFoot').innerHTML = ''; $('#sheetTitle').textContent = ''; } }, 220);
+}
+const kv3 = arr => `<div class="kv">${arr.map(([l, v, c]) => `<div><small>${esc(l)}</small><b class="${c || ''}">${v}</b></div>`).join('')}</div>`;
+
+/* Ficha del producto (§14.4): línea de tiempo, ganancia REAL (costo + arreglos), datos del equipo y contactos */
+function fichaHTML(h){
+  const it = h.item, vend = !!h.venta;
+  const st = vend ? `<span class="tag t-g">vendido ${fdE(h.venta.fecha)}</span>` : `<span class="tag ${h.dias >= 60 ? 't-r' : h.dias >= 30 ? 't-y' : 't-n'}">en stock · ${plural(h.dias, 'día')}</span>`;
+  let b = `<div class="it-tags" style="margin:0 0 10px">${st}<span class="tag t-b">${esc(it.cat || 'Otro')}</span>${it.cond ? `<span class="tag t-n">${esc(it.cond)}</span>` : ''}${it.del ? '<span class="tag t-r">eliminado</span>' : ''}</div>`;
+  const extras = h.costoTotal - (+it.buyPrice || 0);
+  if(vend) b += kv3([['Costo total', full(h.costoTotal)], ['Venta', full(h.venta.precio)], ['Ganancia real', full(h.ganancia), h.ganancia >= 0 ? 'pos' : 'neg']]) +
+    kv3([['Margen', h.margen == null ? '—' : Math.round(h.margen) + '%'], ['Días', String(h.dias)], ['Arreglos', extras ? full(extras) : '—']]);
+  else { const meta = +it.targetPrice || 0;
+    b += kv3([['Costo total', full(h.costoTotal)], ['Meta', meta ? full(meta) : '—'], ['Ganarías', meta ? full(meta - h.costoTotal) : '—', meta ? (meta - h.costoTotal >= 0 ? 'pos' : 'neg') : 'mut']]); }
+  if(extras) b += `<p class="hint" style="margin-top:6px">Costo total = lo que pagaste ${full(it.buyPrice)} + arreglos y gastos de este producto ${full(extras)}.</p>`;
+  /* línea de tiempo */
+  const ev = [];
+  if(h.origen) ev.push({f: it.buyDate, ico: '📦', t: `Lo recibiste en parte de pago`, s: `por <button type="button" class="lnk" data-a="ficha" data-id="${esc(h.origen.id)}">${esc(h.origen.desc)}</button> · valorado en ${full(it.buyPrice)}`});
+  else ev.push({f: it.buyDate, ico: '🛒', t: 'Compra · ' + full(it.buyPrice), s: esc([it.buyPocket ? pn(it.buyPocket) : 'no salió de tus bolsillos', h.proveedor ? 'a ' + h.proveedor : ''].filter(Boolean).join(' · '))});
+  h.costosExtra.forEach(g => ev.push({f: g.fecha, ico: '🔧', t: esc(g.desc || g.cat || 'Gasto') + ' · ' + full(g.valor), s: esc([g.cat, pn(g.bolsillo)].filter(Boolean).join(' · ')), id: g.id}));
+  if(vend){
+    const tv = +it.tradeInValor || 0, pag = h.venta.pagado;
+    ev.push({f: h.venta.fecha, ico: '💰', t: 'Venta · ' + full(h.venta.precio), s: esc([pag ? full(pag) + ' en plata' + (h.venta.bolsillo ? ' a ' + pn(h.venta.bolsillo) : '') : '', h.venta.cliente ? 'a ' + h.venta.cliente : ''].filter(Boolean).join(' · ')) +
+      (h.recibido ? ` · + <button type="button" class="lnk" data-a="ficha" data-id="${esc(h.recibido.id)}">${esc(h.recibido.desc)}</button> (${full(tv || h.recibido.buyPrice)})` : '')});
+    if(h.cobro) ev.push({f: h.cobro.fecha || h.venta.fecha, ico: '🤝', t: h.cobro.pend > 0 ? `${esc(h.cobro.nombre)} te debe ${full(h.cobro.pend)}` : `${esc(h.cobro.nombre)} ya te pagó todo`, s: 'abonado ' + full(h.cobro.pag) + ' de ' + full(h.cobro.total)});
+  }
+  b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Historia</span></div><ol class="tl" data-testid="ficha-tl">${ev.map(e =>
+    `<li><span class="tl-i">${e.ico}</span><div><b>${e.t}</b><div class="meta">${fdE(e.f)}${e.s ? ' · ' + e.s : ''}</div></div></li>`).join('')}</ol>`;
+  /* datos del equipo y contactos */
+  const eq = [['IMEI', it.imei], ['Batería', it.bateria != null && it.bateria !== '' ? it.bateria + '%' : ''], ['Almacenamiento', it.almac], ['Color', it.color], ['Estado', it.cond]].filter(x => x[1]);
+  b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Datos del equipo</span></div>` + (eq.length
+    ? eq.map(([l, v]) => `<div class="kvline"><span>${l}</span><b class="mono">${esc(v)}</b></div>`).join('')
+    : '<p class="hint">Sin datos (IMEI, batería…). Agrégalos con ✏️ Editar.</p>');
+  const ct = [['Se lo compraste a', h.proveedor, it.proveedorId], ['Se lo vendiste a', h.venta && h.venta.cliente, it.clienteId]].filter(x => x[1]);
+  if(ct.length) b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Contactos</span></div>` + ct.map(([l, n, id]) =>
+    `<div class="kvline"><span>${l}</span>${id && get('contactos', id) ? `<button type="button" class="lnk" data-a="goContacto" data-id="${esc(id)}">${esc(n)}</button>` : `<b>${esc(n)}</b>`}</div>`).join('');
+  /* referencia del modelo */
+  const r = priceRef(DB, it);
+  if(r && r.items.length > 1) b += `<button type="button" class="refline" data-a="verRef" data-q="${esc(it.desc)}" style="margin-top:12px">📊 ${esc(refLine(r))} ›</button>`;
+  if(it.notes) b += `<p class="hint" style="margin-top:10px">📝 ${esc(it.notes)}</p>`;
+  return b;
+}
+function openFicha(id){
+  const h = itemHistory(DB, id);
+  if(!h) return toast('Ese producto ya no existe', {err: true});
+  const it = h.item, live = !it.del, sid = esc(it.id);
+  openInfo({kind: 'ficha', id}, (it.status === 'sold' ? '💰 ' : '📦 ') + it.desc, fichaHTML(h),
+    (live && it.status !== 'sold' ? `<button type="button" class="btn b-g" data-a="fichaVender" data-id="${sid}" data-testid="ficha-vender">💰 Vender</button>` : '') +
+    (live ? `<button type="button" class="btn b-gh" data-a="fichaEditar" data-id="${sid}" data-testid="ficha-editar">✏️ Editar</button>
+      <button type="button" class="btn b-gh" data-a="fichaGasto" data-id="${sid}" data-testid="ficha-gasto">＋ Gasto</button>` : '<button type="button" class="btn b-gh" data-a="infoClose">Cerrar</button>'));
+  $('#sheetBody').setAttribute('data-ficha', it.id);
+}
+/* volver a la ficha después de un formulario abierto desde ella */
+const backToFicha = id => () => { if(get('items', id) || (DB.items || []).some(i => i.id === id)) openFicha(id); };
+
+/* Referencia de precios (§14.4) */
+const veces = n => n === 1 ? '1 vez' : n + ' veces';
+function refLine(r){
+  const p = [];
+  if(r.compras.n) p.push(`Lo has comprado ${veces(r.compras.n)}, prom. ${fmt(r.compras.prom)}`);
+  if(r.sugeridoVenta) p.push(`${r.ventas.n ? 'lo vendes en' : 'podrías venderlo en'} ~${fmt(r.sugeridoVenta)} (sugerido)`);
+  return p.join(' · ');
+}
+function refStatsHTML(r){
+  const st = (t, o) => o.n ? `<div class="kvline"><span>${t} <span class="mut" style="font-size:12px">· ${veces(o.n)}</span></span><b class="mono">${full(o.prom)}</b></div>
+    <div class="meta" style="margin:4px 0 8px">entre ${full(o.min)} y ${full(o.max)} · última ${full(o.ultima.precio)} el ${fdE(o.ultima.fecha)}</div>` : `<div class="kvline"><span>${t}</span><b class="mut">—</b></div>`;
+  let b = `<p class="hint" style="margin-bottom:8px">Modelo: <b>${esc(r.modelo)}</b></p>`;
+  b += `<div class="card a-g" style="margin-bottom:10px"><div class="lbl">Precio de venta sugerido</div><div class="val" data-testid="ref-sugerido">${r.sugeridoVenta ? full(r.sugeridoVenta) : '—'}</div>
+    <div class="sub">${r.ventas.n ? 'promedio de tus últimas ventas' : r.sugeridoVenta ? 'tu costo promedio + tu margen de siempre' : 'aún no hay datos para sugerir'}</div></div>`;
+  b += st('Compras', r.compras) + st('Ventas', r.ventas);
+  b += `<div class="kvline"><span>Ganancia promedio</span><b class="mono ${r.gananciaProm == null ? 'mut' : r.gananciaProm >= 0 ? 'pos' : 'neg'}">${r.gananciaProm == null ? '—' : full(r.gananciaProm)}</b></div>`;
+  b += `<div class="kvline"><span>Días para vender</span><b class="mono">${r.diasProm == null ? '—' : r.diasProm + ' d'}</b></div>`;
+  return b;
+}
+function refHTML(r){
+  let b = refStatsHTML(r);
+  b += `<div class="sec-h" style="margin-top:12px"><span class="sec-t">${r.items.length === 1 ? 'Tu producto' : 'Tus ' + r.items.length + ' productos'} de este modelo</span></div><div class="list">` +
+    r.items.slice(0, 30).map(i => { const sold = i.status === 'sold';
+      return `<button type="button" class="row" data-a="ficha" data-id="${esc(i.id)}"><span class="ico">${sold ? '💰' : '📦'}</span>
+      <span class="rmain"><span class="rt" style="display:block">${esc(i.desc)}</span><span class="rs" style="display:block">${sold ? 'vendido ' + fd(i.sellDate) : 'en stock desde ' + fd(i.buyDate)}</span></span>
+      <span class="ramt">${sold ? full(i.sellPrice) : full(i.buyPrice)}<small>${sold ? 'costó ' + full(i.buyPrice) : 'costo'}</small></span></button>`; }).join('') + '</div>';
+  return b;
+}
+function openRef(q){
+  const r = priceRef(DB, q);
+  if(!r) return toast('No tengo datos de “' + q + '” todavía', {err: true});
+  openInfo({kind: 'ref', q}, '📊 ¿Cuánto vale?', refHTML(r));
 }
 
 /* ═════════ 3. FORMULARIOS (motor genérico + tipos) ═════════ */
@@ -704,8 +916,12 @@ function fieldHTML(f){
     inp = `<input class="in" ${common} type="tel" inputmode="tel" autocomplete="off" placeholder="${esc(f.ph || '300 123 4567')}" value="${esc(val)}">`;
   } else if(f.type === 'info'){
     inp = `<div class="hint">${f.html || ''}</div>`;
+  } else if(f.type === 'ref'){                        // §14.4: referencia de precios dentro del formulario
+    inp = `<div class="refbox" ${common}></div>`;
+  } else if(f.type === 'fold'){                       // sección plegable ("Datos del equipo")
+    return `<div class="fld" data-fk="${f.k}"><button type="button" class="fold" ${common} data-fold="${f.k}" aria-expanded="${val ? 'true' : 'false'}">${esc(f.text)} <span aria-hidden="true">${val ? '▴' : '▾'}</span></button></div>`;
   } else {
-    inp = `<input class="in" ${common} type="text" autocomplete="off" autocapitalize="sentences" placeholder="${esc(f.ph || '')}" value="${esc(val)}">`;
+    inp = `<input class="in" ${common} type="text" autocomplete="off" autocapitalize="${f.cap || 'sentences'}"${f.list ? ` list="${f.list}"` : ''}${f.im ? ` inputmode="${f.im}"` : ''} placeholder="${esc(f.ph || '')}" value="${esc(val)}">`;
   }
   return `<div class="fld" data-fk="${f.k}">${f.label ? `<label for="${id}">${esc(f.label)}</label>` : ''}${inp}${f.note ? `<span class="note">${f.note}</span>` : ''}</div>`;
 }
@@ -723,9 +939,9 @@ function openForm(kind, d, opts){
   const fondoFixed = !!d.fondo;
   if(fields.some(f => f.k === 'fondo')) v.fondo = fondoFixed ? d.fondo : fondoAuto(kind, v, d);
   const fromQuick = !!opts.fromQuick, lote = opts.lote != null ? opts.lote : null;
-  F = {kind, spec, d, v, fields, touched: {}, fromQuick, lote, fondoFixed,
+  F = {kind, spec, d, v, fields, touched: {}, fromQuick, lote, fondoFixed, back: opts.back || null,
     parsed: opts.parsed || null, qtext: opts.qtext || '', v0: Object.assign({}, v)};
-  SHEET = 'form';
+  SHEET = 'form'; INFO = null;
   $('#sheetTitle').textContent = typeof spec.title === 'function' ? spec.title(d) : spec.title;
   const ks = fromQuick && lote == null && !d._pend && KSWITCH.some(x => x[0] === kind)
     ? `<div class="kswitch" data-testid="kswitch"><span>¿Es otra cosa?</span>${KSWITCH.filter(x => x[0] !== kind).map(([k, i, l]) =>
@@ -735,7 +951,10 @@ function openForm(kind, d, opts){
     (spec.extra ? spec.extra(d) : '') +
     (spec.extra && spec.extra(d) ? '' : '<button type="button" class="btn b-gh" data-a="formClose" data-testid="form-cancel">Cancelar</button>') +
     `<button type="submit" class="btn b-g" data-testid="form-save">${esc(spec.saveLabel || 'Guardar')}</button>`;
+  if(fields.some(f => f.list === 'dl-contactos')) $('#sheetBody').insertAdjacentHTML('beforeend',
+    `<datalist id="dl-contactos">${contactos().map(c => `<option value="${esc(c.nombre)}"></option>`).join('')}</datalist>`);
   fields.forEach(f => { if(f.type === 'money') moneyEq(f.k); });
+  updateRef();
   refreshShow();
   const sh = $('#sheet');
   sh.classList.add('on'); sh.setAttribute('aria-hidden', 'false');
@@ -748,9 +967,10 @@ function openForm(kind, d, opts){
 }
 
 function closeForm(){
-  const backToLote = !!(F && F.lote != null && LOTE);
+  const backToLote = !!(F && F.lote != null && LOTE), back = F && F.back;
   F = null; SHEET = null;
   if(backToLote){ openLote(); return; }
+  if(back){ back(); if(SHEET) return; }
   const sh = $('#sheet');
   sh.classList.remove('on'); sh.setAttribute('aria-hidden', 'true');
   document.body.style.overflow = '';
@@ -758,9 +978,32 @@ function closeForm(){
   setTimeout(() => { if(!SHEET){ $('#sheetBody').innerHTML = ''; $('#sheetFoot').innerHTML = ''; $('#sheetTitle').textContent = ''; } }, 220);
 }
 /* cierra lo que esté abierto en la hoja (formulario o lote) */
-function closeSheet(){ if(F) closeForm(); else if(LOTE) closeLote(); }
+function closeSheet(){ if(F) closeForm(); else if(LOTE) closeLote(); else if(INFO) closeInfo(); }
 
 const fieldVisible = f => !f.show || !!f.show(F.v);
+/* línea "Lo has comprado 3 veces, prom. $2.1M · lo vendes en ~$2.6M (sugerido)"; tocar → detalle con "Usar" */
+function refQuery(){
+  if(!F) return '';
+  const v = F.v;
+  if(F.kind === 'venta'){
+    if(v.itemId === '__nuevo') return clean(v.desc);
+    if(v.itemId === '__prev') return clean(F.d.desc);
+    const it = v.itemId ? get('items', v.itemId) : null;
+    return it ? it.desc : '';
+  }
+  return clean(v.desc);
+}
+function updateRef(){
+  if(!F || !F.fields.some(f => f.type === 'ref')) return;
+  const box = $('#f-_ref'), q = refQuery(), r = q.length >= 2 ? priceRef(DB, q) : null;
+  F.v._ref = r ? '1' : '';
+  if(box){
+    const use = F.kind === 'venta' ? ['sellPrice', 'Usar ' + (r && r.sugeridoVenta ? full(r.sugeridoVenta) : '')] : ['targetPrice', 'Usar como precio meta'];
+    box.innerHTML = r ? `<button type="button" class="refline" data-ref-toggle aria-expanded="false" data-testid="f-ref-line">📊 ${esc(refLine(r) || 'Ver referencia de ' + r.modelo)} <span aria-hidden="true">▾</span></button>
+      <div class="refdet" hidden data-testid="f-ref-det">${refStatsHTML(r)}${r.sugeridoVenta ? `<button type="button" class="btn b-b full" data-ref-use="${use[0]}" data-v="${r.sugeridoVenta}" data-testid="f-ref-usar">${esc(use[1])}</button>` : ''}</div>` : '';
+  }
+  refreshShow();
+}
 function refreshShow(){
   if(!F) return;
   F.fields.forEach(f => { const w = $(`#sheetBody [data-fk="${f.k}"]`); if(w) w.hidden = !fieldVisible(f); });
@@ -788,6 +1031,7 @@ function onField(k){
   if(!F) return;
   F.touched[k] = true;
   if(F.spec.change) F.spec.change(k, F.v, setVal, F);
+  if(k === 'desc' || k === 'itemId') updateRef();
   if(k !== 'fondo' && 'fondo' in F.v && !F.touched.fondo && !F.fondoFixed){ const a = fondoAuto(F.kind, F.v, F.d); if(a !== F.v.fondo) setVal('fondo', a); }
   refreshShow();
 }
@@ -955,30 +1199,58 @@ const KIND_TXT = {compra: 'compra', venta: 'venta', gasto: 'gasto', ingreso: 'in
 const quickRuleTxt = r => [r.gkind ? 'es ' + (KIND_TXT[r.gkind] || r.gkind) : '', r.cat || '', r.tipo || '', r.bolsillo ? pn(r.bolsillo) : '', r.fondo ? fnName(r.fondo) : '']
   .filter(Boolean).join(' · ');
 
+/* §14.4: campos compartidos de compra / edición */
+const eqShow = v => !!v._equipo;
+const EQ_FIELDS = () => [
+  {k: '_equipo', type: 'fold', text: '📱 Datos del equipo (IMEI, batería, almacenamiento, color)'},
+  {k: 'imei', label: 'IMEI (opcional)', type: 'text', im: 'numeric', cap: 'off', ph: '15 dígitos (*#06#)', show: eqShow},
+  {k: 'bateria', label: 'Batería %', type: 'text', im: 'numeric', ph: 'Ej: 89', show: eqShow},
+  {k: 'almac', label: 'Almacenamiento', type: 'text', cap: 'off', ph: 'Ej: 128GB', show: eqShow},
+  {k: 'color', label: 'Color', type: 'text', ph: 'Ej: Azul', show: eqShow}
+];
+const prepEquipo = d => { if(!d._equipo && ['imei', 'bateria', 'almac', 'color'].some(k => d[k] != null && d[k] !== '')) d._equipo = '1'; };
+const CONTACT_FIELDS = (k, label, ph) => [
+  {k, label, type: 'text', list: 'dl-contactos', cap: 'words', ph},
+  {k: k + 'Nuevo', label: '¿Lo guardo en tus contactos?', type: 'seg', val: 'no', opts: [['no', 'No'], ['si', 'Sí, guardarlo']], show: v => !!clean(v[k]) && !contactoPor(v[k])}
+];
+const REF_FIELD = {k: '_ref', type: 'ref', show: v => !!v._ref};
+const gastoItemOpts = d => [['', 'No']].concat(stockItems().sort((a, b) => String(a.desc).localeCompare(String(b.desc))).map(i => [i.id, i.desc]))
+  .concat(d && d.itemId && !stockItems().some(i => i.id === d.itemId) && get('items', d.itemId) ? [[d.itemId, get('items', d.itemId).desc + ' (vendido)']] : []);
+
+const topeNombre = t => t.cat === '__personal' ? 'todo lo personal' : t.cat;
+
 const FONDO_EMOJIS = ['🏠', '🐷', '🚗', '🎓', '✈️', '🎁', '📱', '🏥', '💡', '🎯'];
 
 const FORMS = {
   compra: {
     title: '🛒 Compré',
-    prep: d => { if(!d.buyDate) d.buyDate = d.fecha || today(); if(d.buyPocket === undefined) d.buyPocket = defPocket(); if(!d.cond) d.cond = 'bueno'; if(!d.cat) d.cat = d.desc ? guessCat(d.desc) : 'Otro'; },
+    prep: d => { if(!d.buyDate) d.buyDate = d.fecha || today(); if(d.buyPocket === undefined) d.buyPocket = defPocket(); if(!d.cond) d.cond = 'bueno'; if(!d.cat) d.cat = d.desc ? guessCat(d.desc) : 'Otro';
+      if(d.proveedorId && !d.proveedor){ const c = get('contactos', d.proveedorId); if(c) d.proveedor = c.nombre; }
+      prepEquipo(d); },
     fields: () => [
       {k: 'desc', label: 'Producto', type: 'text', ph: 'Ej: PS5 Slim 1TB', req: 1},
+      REF_FIELD,
       {k: 'cat', label: 'Categoría', type: 'select', opts: CATS.map(c => [c, c])},
       {k: 'buyPrice', label: '¿Cuánto te costó?', type: 'money', req: 1, ph: 'Ej: 1.2M o 350.000'},
       {k: 'buyPocket', label: '¿De dónde salió la plata?', type: 'seg', opts: pocketOpts().concat([POCKET_NONE])},
       {k: 'fondo', type: 'fondo', opts: fondoOpts()},
       {k: 'buyDate', label: 'Fecha', type: 'date'},
       {k: 'targetPrice', label: 'Precio meta (opcional)', type: 'money', ph: '¿En cuánto lo quieres vender?'},
+      ...CONTACT_FIELDS('proveedor', '¿A quién se lo compraste? (opcional)', 'Ej: Andrés del centro'),
       {k: 'cond', label: 'Estado', type: 'seg', opts: [['nuevo', 'Nuevo'], ['bueno', 'Bueno'], ['regular', 'Regular']]},
-      {k: 'notes', label: 'Notas (opcional)', type: 'text', ph: 'Color, capacidad, detalles…'}
+      ...EQ_FIELDS(),
+      {k: 'notes', label: 'Notas (opcional)', type: 'text', ph: 'Detalles, accesorios…'}
     ],
     change: (k, v, set, F) => { if(k === 'desc' && !F.touched.cat) set('cat', guessCat(v.desc)); },
     save: (v, d, Fx) => {
       const desc = clean(v.desc), p = num(v.buyPrice);
       if(!desc) return {err: 'Escribe qué compraste', k: 'desc'};
       if(p <= 0) return {err: '¿Cuánto te costó?', k: 'buyPrice'};
-      const rec = put('items', withFondo({desc, cat: v.cat || guessCat(desc), cond: v.cond || 'bueno', notes: clean(v.notes), buyPrice: p, buyPocket: v.buyPocket || '',
-        buyDate: v.buyDate || today(), targetPrice: num(v.targetPrice) || null, status: 'stock'}, fondoPick(v, d, Fx)));
+      const ee = equipoErr(v); if(ee) return ee;
+      const prov = linkContacto(v.proveedor, v.proveedorNuevo, 'proveedor');
+      const rec = put('items', withFondo(Object.assign({desc, cat: v.cat || guessCat(desc), cond: v.cond || 'bueno', notes: clean(v.notes), buyPrice: p, buyPocket: v.buyPocket || '',
+        buyDate: v.buyDate || today(), targetPrice: num(v.targetPrice) || null, status: 'stock'}, equipoDe(v),
+        prov.nombre ? {proveedor: prov.nombre} : {}, prov.id ? {proveedorId: prov.id} : {}), fondoPick(v, d, Fx)));
       return {rec, msg: `📦 ${desc} en stock · ${full(p)}`};
     }
   },
@@ -995,12 +1267,14 @@ const FORMS = {
       if(!d.tiCat) d.tiCat = d.tiDesc ? guessCat(d.tiDesc) : 'Otro';
       if(d.itemId && d.itemId !== '__nuevo' && d.itemId !== '__prev' && !d.sellPrice){ const it = get('items', d.itemId); if(it && it.targetPrice) d.sellPrice = +it.targetPrice; }
       if(d.itemId === '__nuevo' && !d.cat) d.cat = d.desc ? guessCat(d.desc) : 'Otro';
+      if(d.clienteId && !d.cliente){ const c = get('contactos', d.clienteId); if(c) d.cliente = c.nombre; }
     },
     intro: d => stockItems().length || d.itemId ? '' : '<p class="hint" style="margin-bottom:10px">No tienes productos en stock: elige <b>➕ Producto no registrado</b>.</p>',
     fields: d => {
       const nuevo = v => v.itemId === '__nuevo', fiado = v => v.completo === 'no', parte = v => v.parte === 'si';
       return [
         {k: 'itemId', label: 'Producto', type: 'select', opts: venderOpts(d), req: 1},
+        REF_FIELD,
         {k: 'desc', label: 'Nombre del producto', type: 'text', ph: 'Ej: Tenis Jordan 1', show: nuevo},
         {k: 'buyPrice', label: '¿Cuánto te costó?', type: 'money', show: nuevo, note: 'Para calcular tu ganancia. No se descuenta de tus bolsillos.'},
         {k: 'cat', label: 'Categoría', type: 'select', opts: CATS.map(c => [c, c]), show: nuevo},
@@ -1012,7 +1286,7 @@ const FORMS = {
           note: 'La venta total = plata + este valor. Entra a tu stock con este costo, sin salir de tus bolsillos.'},
         {k: 'completo', label: '¿Te pagó completa la plata?', type: 'seg', opts: [['si', 'Sí, todo'], ['no', 'No, quedó debiendo']]},
         {k: 'sellPaid', label: '¿Cuánto te pagó ya?', type: 'money', show: fiado, ph: '0 si no pagó nada'},
-        {k: 'cliente', label: 'Nombre del cliente', type: 'text', show: fiado, ph: 'Ej: Juan Pérez'},
+        ...CONTACT_FIELDS('cliente', '¿A quién se lo vendiste?', 'Ej: Juan Pérez (opcional si pagó todo)'),
         {k: 'tel', label: 'Celular (opcional)', type: 'tel', show: fiado},
         {k: 'compromiso', label: '¿Cuándo te paga? (opcional)', type: 'date', show: fiado},
         {k: 'sellPocket', label: '¿A dónde entró la plata?', type: 'seg', opts: pocketOpts(), show: v => fiado(v) ? num(v.sellPaid) > 0 : num(v.sellPrice) > 0},
@@ -1052,7 +1326,10 @@ const FORMS = {
       const pocket = v.sellPocket || defPocket();
       const fecha = v.sellDate || today();
       const venta = withFondo(Object.assign({}, it, {status: 'sold', sellPrice: sp + V, sellPaid: paid, sellPocket: pocket, sellDate: fecha, sellNotes: clean(v.sellNotes)}), fondo);
-      delete venta.tradeInId; delete venta.tradeInValor;
+      delete venta.tradeInId; delete venta.tradeInValor; delete venta.cliente; delete venta.clienteId;
+      const cl = cliente ? linkContacto(cliente, v.clienteNuevo, 'cliente') : {};      // §14.4: a quién se lo vendiste
+      if(cl.nombre) venta.cliente = cl.nombre;
+      if(cl.id){ venta.clienteId = cl.id; const c = get('contactos', cl.id); if(c && !c.tel && clean(v.tel)) put('contactos', Object.assign({}, c, {tel: clean(v.tel)})); }
       let recibido = null;
       if(parte){
         recibido = {id: uid(), desc: tiDesc, cat: v.tiCat || guessCat(tiDesc), cond: 'bueno', notes: 'Parte de pago por ' + it.desc, buyPrice: V, buyPocket: '',
@@ -1064,18 +1341,23 @@ const FORMS = {
       if(recibido) put('items', recibido);
       let extra = '';
       if(paid < sp){
-        put('cobros', withFondo({nombre: titleCase(cliente), tel: clean(v.tel), total: sp - paid, pagado: 0, bolsillo: '', fecha,
-          compromiso: v.compromiso || '', notas: 'Venta: ' + it.desc, itemId: rec.id}, venta.fondo));
+        put('cobros', withFondo(Object.assign({nombre: titleCase(cliente), tel: clean(v.tel), total: sp - paid, pagado: 0, bolsillo: '', fecha,
+          compromiso: v.compromiso || '', notas: 'Venta: ' + it.desc, itemId: rec.id}, cl.id ? {contactoId: cl.id} : {}), venta.fondo));
         extra = ` · ${titleCase(cliente)} te debe ${full(sp - paid)}`;
       }
       if(recibido) extra += ` · ${recibido.desc} entró al stock`;
-      const g = sp + V - (+it.buyPrice || 0);
+      const g = sp + V - costoReal(it);                         // ganancia REAL: costo + arreglos ligados
       return {rec, recibido, g, msg: `💰 ¡Vendido! Ganancia ${full(g)}${extra}`};
     }
   },
 
   editItem: {
     title: '✏️ Editar producto',
+    prep: d => {
+      if(d.proveedorId){ const c = get('contactos', d.proveedorId); if(c) d.proveedor = c.nombre; }
+      if(d.clienteId){ const c = get('contactos', d.clienteId); if(c) d.cliente = c.nombre; }
+      prepEquipo(d);
+    },
     fields: d => {
       const f = [
         {k: 'desc', label: 'Producto', type: 'text', req: 1},
@@ -1090,9 +1372,10 @@ const FORMS = {
         {k: 'sellPrice', label: d.tradeInValor ? 'Precio de venta total (plata + parte de pago)' : 'Precio de venta', type: 'money', req: 1,
           note: d.tradeInValor ? 'Incluye ' + esc(full(d.tradeInValor)) + ' de la parte de pago.' : ''},
         {k: 'sellPocket', label: '¿A dónde entró la plata?', type: 'seg', opts: pocketOpts()},
-        {k: 'sellDate', label: 'Fecha de venta', type: 'date'});
+        {k: 'sellDate', label: 'Fecha de venta', type: 'date'},
+        ...CONTACT_FIELDS('cliente', '¿A quién se lo vendiste?', 'Nombre (opcional)'));
       else f.push({k: 'targetPrice', label: 'Precio meta (opcional)', type: 'money'});
-      f.push({k: 'notes', label: 'Notas', type: 'text'});
+      f.push(...CONTACT_FIELDS('proveedor', '¿A quién se lo compraste?', 'Nombre (opcional)'), ...EQ_FIELDS(), {k: 'notes', label: 'Notas', type: 'text'});
       return f;
     },
     extra: d => d.status === 'sold' ? '<button type="button" class="btn b-y" data-a="formUnsell" data-testid="form-unsell">↩️ A stock</button>' : '',
@@ -1100,6 +1383,7 @@ const FORMS = {
       const desc = clean(v.desc), bp = num(v.buyPrice);
       if(!desc) return {err: 'Escribe el nombre del producto', k: 'desc'};
       if(bp <= 0) return {err: 'El costo debe ser mayor a 0', k: 'buyPrice'};
+      const ee = equipoErr(v); if(ee) return ee;
       const it = withFondo(Object.assign({}, get('items', d.id) || d, {desc, cat: v.cat, cond: v.cond, notes: clean(v.notes), buyPrice: bp, buyPocket: v.buyPocket || '', buyDate: v.buyDate || today()}),
         Fx && Fx.touched.fondo ? fondoPick(v, {}, Fx) : undefined);
       if(it.status === 'sold'){
@@ -1114,6 +1398,17 @@ const FORMS = {
         const c = L(DB, 'cobros').find(x => x.itemId === it.id);
         if(c && !wasFull) put('cobros', Object.assign({}, c, {total: cash - it.sellPaid}));
       } else it.targetPrice = num(v.targetPrice) || null;
+      ['imei', 'bateria', 'almac', 'color', 'proveedor', 'proveedorId'].forEach(k => delete it[k]);   // §14.4: datos del equipo y contactos
+      Object.assign(it, equipoDe(v));
+      const prov = linkContacto(v.proveedor, v.proveedorNuevo, 'proveedor');
+      if(prov.nombre) it.proveedor = prov.nombre;
+      if(prov.id) it.proveedorId = prov.id;
+      if(it.status === 'sold'){
+        delete it.cliente; delete it.clienteId;
+        const cl = linkContacto(v.cliente, v.clienteNuevo, 'cliente');
+        if(cl.nombre) it.cliente = cl.nombre;
+        if(cl.id) it.clienteId = cl.id;
+      }
       put('items', it);
       if(Fx && Fx.touched.fondo && it.fondo)                        // el cobro de esa venta (y sus abonos) siguen al producto
         L(DB, 'cobros').filter(c => c.itemId === it.id && c.fondo !== it.fondo).forEach(c => put('cobros', Object.assign({}, c, {fondo: it.fondo})));
@@ -1136,29 +1431,40 @@ const FORMS = {
     prep: d => {
       if(!d.fecha) d.fecha = today();
       if(d.bolsillo === undefined) d.bolsillo = defPocket();
-      if(!d.cat) d.cat = d.desc ? guessGCat(d.desc) : 'Otro';
-      if(!d.tipo) d.tipo = NEG_CATS.includes(d.cat) ? 'negocio' : 'personal';
+      if(d.itemId && !get('items', d.itemId)) delete d.itemId;
+      if(d.itemId === undefined) d.itemId = '';
+      if(!d.cat || (d.itemId && d.cat === 'Otro')) d.cat = d.desc ? guessGCat(d.desc) : 'Otro';
+      if(d.itemId && d.cat === 'Otro') d.cat = 'Mantenimiento';
+      if(!d.tipo) d.tipo = d.itemId || NEG_CATS.includes(d.cat) ? 'negocio' : 'personal';
     },
-    fields: () => [
+    intro: d => { const it = d.itemId && get('items', d.itemId);
+      return it && d._ficha ? `<p class="hint" style="margin-bottom:10px">Arreglo, repuesto, envío… de <b>${esc(it.desc)}</b>: suma a su costo y descuenta de su ganancia.</p>` : ''; },
+    fields: d => [
       {k: 'desc', label: '¿En qué?', type: 'text', ph: 'Ej: Envío Servientrega'},
       {k: 'valor', label: 'Valor', type: 'money', req: 1, ph: 'Ej: 12k o 12.000'},
       {k: 'cat', label: 'Categoría', type: 'select', opts: GCATS.map(c => [c, c])},
       {k: 'tipo', label: 'Tipo', type: 'seg', opts: [['negocio', '🏢 Negocio'], ['personal', '👤 Personal']]},
+      {k: 'itemId', label: '¿Es de un producto? (arreglo, repuesto, envío…)', type: 'select', opts: gastoItemOpts(d),
+        note: 'Si es de un producto, suma a su costo y la ganancia de esa venta sale real.'},
       {k: 'bolsillo', label: '¿De dónde salió?', type: 'seg', opts: pocketOpts()},
       {k: 'fondo', type: 'fondo', opts: fondoOpts()},
       {k: 'fecha', label: 'Fecha', type: 'date'}
     ],
     change: (k, v, set, F) => {
-      if(k === 'desc' && !F.touched.cat){ const c = guessGCat(v.desc); set('cat', c); if(!F.touched.tipo && !F.d._pend) set('tipo', NEG_CATS.includes(c) ? 'negocio' : 'personal'); }
-      if(k === 'cat' && !F.touched.tipo) set('tipo', NEG_CATS.includes(v.cat) ? 'negocio' : 'personal');
+      const tipoDe = c => v.itemId || NEG_CATS.includes(c) ? 'negocio' : 'personal';
+      if(k === 'desc' && !F.touched.cat){ const c = guessGCat(v.desc); set('cat', c); if(!F.touched.tipo && !F.d._pend) set('tipo', tipoDe(c)); }
+      if(k === 'cat' && !F.touched.tipo) set('tipo', tipoDe(v.cat));
+      if(k === 'itemId' && v.itemId){ if(!F.touched.tipo) set('tipo', 'negocio'); if(!F.touched.cat && v.cat === 'Otro') set('cat', 'Mantenimiento'); }
     },
     save: (v, d, Fx) => {
       const valor = num(v.valor);
       if(valor <= 0) return {err: '¿Cuánto fue el gasto?', k: 'valor'};
       if(!v.bolsillo) return {err: '¿De qué bolsillo salió?', k: 'bolsillo'};
       const desc = clean(v.desc) || v.cat || 'Gasto';
-      const rec = put('gastos', withFondo({desc, valor, cat: v.cat || 'Otro', tipo: v.tipo === 'negocio' ? 'negocio' : 'personal', bolsillo: v.bolsillo, fecha: v.fecha || today()}, fondoPick(v, d, Fx)));
-      return {rec, msg: `💸 ${desc} · ${full(valor)} (${rec.tipo})`};
+      const it = v.itemId ? get('items', v.itemId) : null;
+      const rec = put('gastos', withFondo(Object.assign({desc, valor, cat: v.cat || 'Otro', tipo: v.tipo === 'negocio' ? 'negocio' : 'personal', bolsillo: v.bolsillo, fecha: v.fecha || today()},
+        it ? {itemId: it.id} : {}), fondoPick(v, d, Fx)));
+      return {rec, msg: `💸 ${desc} · ${full(valor)} (${rec.tipo})` + (it ? ` · costo de ${it.desc}: ${full(costoReal(it))}` : '')};
     }
   },
 
@@ -1407,6 +1713,58 @@ const FORMS = {
     }
   },
 
+  /* §14.4: contactos (clientes y proveedores) */
+  contacto: {
+    title: d => d.id ? '✏️ Editar contacto' : '👤 Nuevo contacto',
+    prep: d => { const c = d.id ? get('contactos', d.id) : null; if(c) Object.assign(d, {nombre: c.nombre, tel: c.tel || '', tipo: c.tipo || 'cliente', notas: c.notas || ''}); if(!d.tipo) d.tipo = 'cliente'; },
+    fields: () => [
+      {k: 'nombre', label: 'Nombre', type: 'text', req: 1, cap: 'words', ph: 'Ej: Mateo Ríos'},
+      {k: 'tel', label: 'Celular (opcional)', type: 'tel'},
+      {k: 'tipo', label: '¿Qué es para ti?', type: 'seg', opts: [['cliente', 'Cliente'], ['proveedor', 'Proveedor'], ['ambos', 'Ambos']]},
+      {k: 'notas', label: 'Notas (opcional)', type: 'text', ph: 'Ej: vende iPhones en el centro'}
+    ],
+    save: (v, d) => {
+      const nombre = titleCase(clean(v.nombre));
+      if(!nombre) return {err: 'Escribe el nombre', k: 'nombre'};
+      if(L(DB, 'contactos').some(c => c.id !== d.id && normNombre(c.nombre) === normNombre(nombre))) return {err: 'Ya tienes un contacto con ese nombre', k: 'nombre'};
+      if(clean(v.tel) && !waNumber(v.tel)) return {err: 'Ese celular no parece válido (10 dígitos, empieza por 3)', k: 'tel'};
+      const base = d.id ? get('contactos', d.id) || {} : {};
+      const rec = put('contactos', Object.assign({}, base, {id: d.id, nombre, tel: clean(v.tel), tipo: v.tipo || 'cliente', notas: clean(v.notas)}));
+      return {rec, msg: (d.id ? '✓ ' : '👤 ') + nombre + (d.id ? ' actualizado' : ' guardado en contactos')};
+    },
+    del: (v, d) => {
+      const c = get('contactos', d.id);
+      if(!c || !confirm('¿Eliminar a ' + c.nombre + ' de tus contactos?\nSus compras y ventas se quedan (con el nombre escrito).')) return null;
+      remove('contactos', c.id);
+      return {msg: '🗑️ ' + c.nombre + ' eliminado', undo: () => { restore('contactos', c); commit('Recuperado ✓'); }};
+    }
+  },
+
+  /* §14.4: topes de gasto por mes */
+  tope: {
+    title: d => d.id ? '✏️ Editar tope' : '🚦 Nuevo tope',
+    prep: d => { const t = d.id ? get('topes', d.id) : null; if(t){ d.cat = t.cat; d.limite = +t.limite || ''; } if(!d.cat) d.cat = '__personal'; },
+    intro: () => '<p class="hint" style="margin-bottom:10px">Un tope es lo máximo que quieres gastar en el mes. Te aviso al llegar al 80% y si te pasas.</p>',
+    fields: () => [
+      {k: 'cat', label: '¿En qué?', type: 'select', opts: [['__personal', '👤 Todo lo personal']].concat(GCATS.map(c => [c, c]))},
+      {k: 'limite', label: 'Máximo al mes', type: 'money', req: 1, ph: 'Ej: 800k'}
+    ],
+    save: (v, d) => {
+      const limite = num(v.limite);
+      if(limite <= 0) return {err: '¿Cuánto es lo máximo al mes?', k: 'limite'};
+      if(L(DB, 'topes').some(t => t.id !== d.id && t.cat === v.cat)) return {err: 'Ya tienes un tope para eso: edítalo', k: 'cat'};
+      const base = d.id ? get('topes', d.id) || {} : {};
+      const rec = put('topes', Object.assign({}, base, {id: d.id, cat: v.cat, limite}));
+      return {rec, msg: '🚦 Tope de ' + topeNombre(rec) + ': ' + full(limite) + ' al mes'};
+    },
+    del: (v, d) => {
+      const t = get('topes', d.id);
+      if(!t || !confirm('¿Eliminar el tope de ' + topeNombre(t) + '?')) return null;
+      remove('topes', t.id);
+      return {msg: '🗑️ Tope eliminado', undo: () => { restore('topes', t); commit('Recuperado ✓'); }};
+    }
+  },
+
   tel: {
     title: d => '💬 Celular de ' + d.nombre,
     fields: () => [{k: 'tel', label: 'Celular', type: 'tel', req: 1, ph: '300 123 4567'}],
@@ -1484,7 +1842,7 @@ function ignorePend(id){
 
 /* ── Acciones de la lista de movimientos y botones ── */
 function tapMov(col, id){
-  if(col === 'items'){ const it = get('items', id); if(it) openForm('editItem', it); return; }
+  if(col === 'items'){ if(get('items', id)) openFicha(id); return; }   // §14.4: la ficha (con Editar adentro)
   const r = get(col, id);
   if(!r) return;
   const row = movs().find(x => x.col === col && x.id === id);
@@ -1560,6 +1918,27 @@ function cuadreReport(){
 
 const ACT = {
   form: el => openForm(el.dataset.k, {}),
+  /* §14.4 */
+  ficha: el => openFicha(el.dataset.id),
+  infoClose: () => closeInfo(),
+  fichaVender: el => openForm('venta', {itemId: el.dataset.id}, {back: backToFicha(el.dataset.id)}),
+  fichaEditar: el => { const it = get('items', el.dataset.id); if(it) openForm('editItem', it, {back: backToFicha(it.id)}); },
+  fichaGasto: el => openForm('gasto', {itemId: el.dataset.id, tipo: 'negocio', _ficha: 1}, {back: backToFicha(el.dataset.id)}),
+  verRef: el => openRef(el.dataset.q),
+  refBuscar: () => { const q = clean(UI.refQ); if(q) openRef(q); },
+  goContacto: el => { closeSheet(); UI.masSeg = 'contactos'; UI.ctQ = (get('contactos', el.dataset.id) || {}).nombre || ''; setView('mas'); const i = $('#ctQ'); if(i) i.value = UI.ctQ; renderContactos(); },
+  nuevoContacto: () => openForm('contacto', {}),
+  editContacto: el => openForm('contacto', {id: el.dataset.id}),
+  waContacto: el => {
+    const c = get('contactos', el.dataset.id);
+    if(!c) return;
+    const n = waNumber(c.tel);
+    if(!n){ toast('Agrégale el celular a ' + c.nombre); openForm('contacto', {id: c.id}); return; }
+    window.open('https://wa.me/' + n + '?text=' + encodeURIComponent('Hola ' + c.nombre.split(' ')[0] + ', ¿cómo vas? 👋'), '_blank', 'noopener');
+  },
+  goTopes: () => { UI.masSeg = 'dinero'; UI.dnSeg = 'topes'; setView('mas'); },
+  nuevoTope: el => openForm('tope', el.dataset.cat ? {cat: el.dataset.cat, limite: +el.dataset.lim || ''} : {}),
+  editTope: el => openForm('tope', {id: el.dataset.id}),
   goDinero: () => { UI.masSeg = 'dinero'; UI.dnSeg = 'para'; setView('mas'); },
   repartir: el => openForm('reparto', el.dataset.fondo ? {to: el.dataset.fondo} : {}),
   nuevoFondo: () => openForm('fondo', {}),
@@ -2089,6 +2468,10 @@ function bindEvents(){
   $('#masSeg').addEventListener('click', e => { const b = e.target.closest('button[data-seg]'); if(b){ UI.masSeg = b.dataset.seg; renderMas(); } });
   $('#dnSeg').addEventListener('click', e => { const b = e.target.closest('button[data-seg]'); if(b){ UI.dnSeg = b.dataset.seg; renderDinero(); } });
   $('#mvFondo').addEventListener('change', e => { UI.mvFondo = e.target.value; renderMovs(); });
+  $('#refQ').addEventListener('input', e => { UI.refQ = e.target.value; renderRefQuick(); });
+  $('#refForm').addEventListener('submit', e => { e.preventDefault(); ACT.refBuscar(); });
+  $('#ctQ').addEventListener('input', e => { UI.ctQ = e.target.value; renderContactos(); });
+  document.addEventListener('keydown', e => { if((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[role=button][data-a]')){ e.preventDefault(); e.target.click(); } });
   $('#anPrev').addEventListener('click', () => { UI.anMonth = ymAdd(UI.anMonth, -1); renderAnalisis(); });
   $('#anNext').addEventListener('click', () => { if(UI.anMonth < today().slice(0, 7)){ UI.anMonth = ymAdd(UI.anMonth, 1); renderAnalisis(); } });
   $('#cbNew').addEventListener('click', () => openForm('cobro', {}));
@@ -2113,6 +2496,12 @@ function bindEvents(){
   body.addEventListener('input', onEdit);
   body.addEventListener('change', onEdit);
   body.addEventListener('click', e => {
+    const fo = e.target.closest('[data-fold]');            // "Datos del equipo ▾"
+    if(fo && F){ const k = fo.dataset.fold; F.v[k] = F.v[k] ? '' : '1'; fo.setAttribute('aria-expanded', String(!!F.v[k])); const ar = fo.querySelector('span'); if(ar) ar.textContent = F.v[k] ? '▴' : '▾'; refreshShow(); return; }
+    const rt = e.target.closest('[data-ref-toggle]');      // referencia de precios: ver detalle
+    if(rt){ const d = rt.parentElement.querySelector('.refdet'); if(d){ d.hidden = !d.hidden; rt.setAttribute('aria-expanded', String(!d.hidden)); } return; }
+    const ru = e.target.closest('[data-ref-use]');         // "Usar $2.6M"
+    if(ru && F){ const k = ru.dataset.refUse; setVal(k, +ru.dataset.v); onField(k); toast('Listo: ' + full(+ru.dataset.v)); return; }
     const tg = e.target.closest('[data-fondo-toggle]');      // chip "Plata de: … ▾" → despliega los apartados
     if(tg){ const o = tg.parentElement.querySelector('.opts'); if(o){ o.hidden = !o.hidden; tg.setAttribute('aria-expanded', String(!o.hidden)); } return; }
     const b = e.target.closest('.opts button[data-v]');
