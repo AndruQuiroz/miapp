@@ -179,6 +179,8 @@ button.card{width:100%;font:inherit;color:inherit}
 /* ── Stock y cobros ── */
 .it{background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);padding:12px 13px;margin-bottom:10px}
 .it.dim{opacity:.55}
+.btn.dim{opacity:.5}
+textarea.in{min-height:110px;resize:vertical;font-family:var(--mono,monospace);line-height:1.45}
 .it-h{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .it-n{font-weight:600;font-size:15.5px;word-break:break-word}
 .it-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
@@ -364,6 +366,7 @@ body:has(.wrap input:focus) .tabs{display:none}
     <form id="refForm" autocomplete="off" role="search"><input class="search refq" id="refQ" data-testid="ref-q" type="search" placeholder="💲 ¿Cuánto vale un…? (ej: iphone 13)" autocomplete="off" aria-label="¿Cuánto vale un producto?"></form>
     <div id="refBody"></div>
     <input class="search" id="stSearch" data-testid="stock-search" type="search" placeholder="🔎 Buscar producto…" autocomplete="off" aria-label="Buscar producto">
+    <button type="button" class="btn b-b full" data-a="lista" data-testid="lista-abrir" style="margin:8px 0">📋 Pegar lista al inventario</button>
     <div class="seg" id="stSeg">
       <button type="button" data-seg="stock" class="on">En stock</button>
       <button type="button" data-seg="sold">Vendidos</button>

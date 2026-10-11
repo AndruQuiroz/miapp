@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '2.5.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -2324,6 +2324,116 @@ Object.assign(ACT, {
   loteCancel: () => closeLote()
 });
 
+
+/* ═════════ §15 PEGAR UNA LISTA AL INVENTARIO ═════════
+   "Negro 512 2 palos / Negro 256 fisura recibido 2 / …" → un producto por línea (parseLista en quick.js) */
+let LISTA = null, listaTimer = 0;
+function openLista(texto){
+  LISTA = {texto: texto || '', modelo: null, pocket: undefined, fecha: today(), quitar: new Set(), precios: {}};
+  const body = `<p class="hint" style="margin-bottom:8px">Pega tu lista: <b>una línea por producto</b> con color, almacenamiento, detalles y el precio en que lo compraste o recibiste. Escribe <b>recibido</b> si vino en parte de pago.</p>
+    <textarea class="in" id="listaTxt" data-testid="lista-texto" rows="5" spellcheck="false" placeholder="Negro 512 2 palos&#10;Negro 256 fisura recibido 2&#10;Desert 256 2.2">${esc(LISTA.texto)}</textarea>
+    <div id="listaPrev" data-testid="lista-prev"></div>`;
+  openInfo({kind: 'lista'}, '📋 Agregar al inventario', body, `<button type="button" class="btn b-gh" data-a="listaCancel">Cancelar</button>
+    <button type="button" class="btn b-g" data-a="listaSave" data-testid="lista-save" id="listaSave">Agregar</button>`);
+  renderListaPrev();
+  const ta = $('#listaTxt'); if(ta && !LISTA.texto) setTimeout(() => ta.focus(), 50);
+}
+const listaActivos = r => r.items.map((it, i) => ({it, i})).filter(x => !LISTA.quitar.has(x.i));
+const listaPrecio = x => num(LISTA.precios[x.i]) || x.it.buyPrice || 0;
+function listaModelosRecientes(){
+  const vistos = [];
+  L(DB, 'items').filter(i => (i.cat || guessCat(i.desc)) === 'Celulares').sort((a, b) => (+b.u || 0) - (+a.u || 0)).forEach(i => {
+    const m = String(i.desc || '').replace(/\s*\d+\s*(gb|tb)\b.*$/i, '').replace(/\s+(negro|blanco|azul|desert|natural|morado|dorado|rosado|verde|rojo|gris)\b.*$/i, '').trim();
+    if(m && !vistos.includes(m) && vistos.length < 4) vistos.push(m);
+  });
+  return vistos;
+}
+function renderListaPrev(){
+  if(!LISTA) return;
+  const box = $('#listaPrev'); if(!box) return;
+  const r = parseLista(LISTA.texto, quickCtx());
+  if(LISTA.modelo == null && r.items.length) LISTA.modelo = r.sugerido || '';
+  const act = listaActivos(r);
+  let h = '';
+  if(r.items.length && r.faltaModelo){
+    const sug = [r.sugerido].concat(listaModelosRecientes()).filter((x, k, a) => x && a.indexOf(x) === k).slice(0, 4);
+    h += `<div class="lbl" style="margin-top:12px">¿Qué modelo son? <span class="mut">(para las líneas que no lo dicen)</span></div>
+      <input class="in" id="listaModelo" data-testid="lista-modelo" type="text" autocomplete="off" value="${esc(LISTA.modelo || '')}" placeholder="Ej: iPhone 16 Pro Max">
+      ${sug.length ? `<div class="opts" style="margin-top:6px">${sug.map(m => `<button type="button" class="${m === LISTA.modelo ? 'on' : ''}" data-a="listaModeloPick" data-v="${esc(m)}">${esc(m)}</button>`).join('')}</div>` : ''}`;
+  }
+  h += act.map(({it, i}) => {
+    const p = listaPrecio({it, i});
+    const name = listaDesc(it, LISTA.modelo);
+    const tags = [it.cond === 'regular' ? '<span class="tag t-y">detalle</span>' : '', it.bateria ? `<span class="tag t-n">🔋 ${esc(it.bateria)}%</span>` : '',
+      it.recibido ? '<span class="tag t-p">📦 Recibido en parte de pago</span>' : '<span class="tag t-b">🛒 Comprado</span>'].join('');
+    return `<div class="alert" data-testid="lista-card" data-i="${i}" style="--ac:${p ? (it.recibido ? 'var(--P)' : 'var(--B)') : 'var(--Y)'};margin-top:10px">
+      <div class="alert-h"><div style="min-width:0;flex:1"><div class="alert-t" style="font-weight:600">${esc(name)}</div>
+      <div class="meta" style="margin-top:4px">${tags}${it.notas ? ` <span class="mut">· ${esc(it.notas)}</span>` : ''}</div></div>
+      <button type="button" class="ibtn" data-a="listaQuitar" data-i="${i}" aria-label="Quitar">✕</button></div>
+      ${p ? `<div class="meta" style="margin-top:6px">${it.recibido ? 'Lo recibiste valorado en' : 'Te costó'} <b class="mono">${full(p)}</b></div>`
+        : `<div class="meta yel" style="margin-top:6px">Falta el precio</div><input class="in mono" data-lp="${i}" data-testid="lista-precio-${i}" inputmode="decimal" placeholder="Ej: 2.1M" style="margin-top:6px">`}
+      <div class="mut" style="font-size:12px;margin-top:4px">“${esc(it.raw)}”</div></div>`;
+  }).join('');
+  const comprados = act.filter(x => !x.it.recibido);
+  if(comprados.length){
+    h += `<div class="lbl" style="margin-top:14px">¿De dónde salió la plata de ${comprados.length === 1 ? 'el comprado' : 'los ' + comprados.length + ' comprados'}?</div>
+      <div class="opts" style="margin-top:6px">${pocketOpts().concat([POCKET_NONE]).map(([o, l]) => `<button type="button" class="${LISTA.pocket !== undefined && String(o) === String(LISTA.pocket) ? 'on' : ''}" data-a="listaPocket" data-v="${esc(o)}" data-testid="lista-pocket-${esc(o || 'ninguno')}">${esc(l)}</button>`).join('')}</div>`;
+  }
+  if(act.length) h += `<div class="lbl" style="margin-top:14px">Fecha</div><input class="in" id="listaFecha" type="date" value="${esc(LISTA.fecha)}" data-testid="lista-fecha">
+    <p class="hint" style="margin-top:10px">Total: <b class="mono">${full(act.reduce((a, x) => a + listaPrecio(x), 0))}</b>${comprados.length ? ` · comprados ${full(comprados.reduce((a, x) => a + listaPrecio(x), 0))}` : ''}</p>`;
+  else if(LISTA.texto.trim()) h += `<p class="hint" style="margin-top:10px">No encontré productos con precio en ese texto.</p>`;
+  box.innerHTML = h;
+  const btn = $('#listaSave');
+  if(btn){ const miss = listaFalta(r); btn.textContent = act.length ? `Agregar ${plural(act.length, 'producto')}` : 'Agregar'; btn.classList.toggle('dim', !!miss); btn.title = miss || ''; }
+}
+function listaFalta(r){
+  const act = listaActivos(r);
+  if(!act.length) return 'Pega al menos un producto con su precio';
+  if(act.some(x => !listaPrecio(x))) return 'A algún producto le falta el precio';
+  if(act.some(x => !x.it.modelo) && !String(LISTA.modelo || '').trim()) return 'Escribe qué modelo son';
+  if(act.some(x => !x.it.recibido) && LISTA.pocket === undefined) return 'Elige de dónde salió la plata de los comprados';
+  return '';
+}
+function saveLista(){
+  if(!LISTA) return;
+  const r = parseLista(LISTA.texto, quickCtx()), miss = listaFalta(r);
+  if(miss){ toast(miss, {err: true}); return; }
+  const before = JSON.parse(JSON.stringify(DB));
+  const act = listaActivos(r);
+  let total = 0;
+  act.forEach(x => {
+    const it = x.it, desc = listaDesc(it, LISTA.modelo), price = listaPrecio(x);
+    const notes = [it.notas, it.recibido ? 'Recibido en parte de pago' : ''].filter(Boolean).join(' · ');
+    const rec = {desc, cat: guessCat(desc) !== 'Otro' ? guessCat(desc) : 'Celulares', cond: it.cond || 'bueno', buyPrice: price,
+      buyPocket: it.recibido ? '' : (LISTA.pocket || ''), buyDate: LISTA.fecha || today(), status: 'stock', targetPrice: null};
+    ['color', 'almac', 'bateria', 'imei'].forEach(k => { if(it[k] != null && it[k] !== '') rec[k] = it[k]; });
+    if(notes) rec.notes = notes;
+    put('items', rec); total += price;
+  });
+  const undo = undoFrom(before);
+  LISTA = null;
+  const q = $('#qInput'); if(q) q.value = '';
+  closeInfo();
+  commit(`📦 ${plural(act.length, 'producto agregado', 'productos agregados')} al stock · ${full(total)}`, {undo, ms: 8000});
+}
+Object.assign(ACT, {
+  lista: () => openLista(''),
+  listaCancel: () => { LISTA = null; closeInfo(); },
+  listaSave: () => saveLista(),
+  listaQuitar: el => { if(LISTA){ LISTA.quitar.add(+el.dataset.i); renderListaPrev(); } },
+  listaPocket: el => { if(LISTA){ LISTA.pocket = el.dataset.v; renderListaPrev(); } },
+  listaModeloPick: el => { if(LISTA){ LISTA.modelo = el.dataset.v; renderListaPrev(); } }
+});
+document.addEventListener('input', e => {
+  if(!LISTA || !INFO || INFO.kind !== 'lista') return;
+  const t = e.target;
+  if(t.id === 'listaTxt'){ LISTA.texto = t.value; LISTA.quitar.clear(); clearTimeout(listaTimer); listaTimer = setTimeout(renderListaPrev, 350); }
+  else if(t.id === 'listaModelo'){ LISTA.modelo = t.value; clearTimeout(listaTimer); listaTimer = setTimeout(() => { const f = document.activeElement && document.activeElement.id; renderListaPrev(); if(f === 'listaModelo'){ const m = $('#listaModelo'); if(m){ m.focus(); m.setSelectionRange(m.value.length, m.value.length); } } }, 600); }
+  else if(t.id === 'listaFecha'){ LISTA.fecha = t.value; }
+  else if(t.dataset && t.dataset.lp != null){ LISTA.precios[t.dataset.lp] = parseMoney(t.value); const btn = $('#listaSave'); if(btn){ const miss = listaFalta(parseLista(LISTA.texto, quickCtx())); btn.classList.toggle('dim', !!miss); } }
+});
+document.addEventListener('change', e => { if(LISTA && e.target && e.target.dataset && e.target.dataset.lp != null) renderListaPrev(); });
+
 /* ═════════ 4. REGISTRO RÁPIDO Y VOZ ═════════ */
 const quickCtx = () => ({
   bolsillos: pockets().map(p => ({id: p.id, nombre: p.nombre, alias: Array.isArray(p.alias) ? p.alias.slice() : []})),
@@ -2588,6 +2698,10 @@ function bindEvents(){
   /* registro rápido */
   $('#qForm').addEventListener('submit', e => { e.preventDefault(); runQuick($('#qInput').value); });
   $('#qMic').addEventListener('click', e => { e.preventDefault(); startVoice(); });
+  $('#qInput').addEventListener('paste', e => {
+    const txt = (e.clipboardData || window.clipboardData || {getData: () => ''}).getData('text') || '';
+    if(/\n/.test(txt.trim()) && parseLista(txt, quickCtx()).items.length >= 2){ e.preventDefault(); openLista(txt); }
+  });
 
   /* controles con estado (markup estático: no pierden el foco al pintar) */
   $('#stSearch').addEventListener('input', e => { UI.stQ = e.target.value; renderStock(); });

@@ -1380,4 +1380,74 @@ function parseQuickMulti(texto, ctx){
   return out;
 }
 
-if(typeof module !== 'undefined') module.exports = {parseQuick, parseQuickMulti, CATS, GCATS, NEG_CATS, guessCat, guessGCat, normKey, bestMatch, qkMatchStock, qkClean};
+
+/* ═══════════════════════════════════════════════
+   §15 — Lista para inventario (una línea = un producto)
+   parseLista("Negro 512 2 palos\nNegro 256 fisura recibido 2\nDesert 256 2.2\nDesert recibido 2", ctx)
+   → {items:[{raw, modelo, almac, color, notas, cond, buyPrice, recibido}], faltaModelo, sugerido}
+═══════════════════════════════════════════════ */
+const QK_COLOR_L = [
+  ['Desert', 'desert|desierto|arena'], ['Natural', 'natural|titanio natural'], ['Negro', 'negro|negra|black|negro espacial|grafito|space black|space gray|gris espacial'],
+  ['Blanco', 'blanco|blanca|white|starlight|blanco estelar|plata|silver'], ['Azul', 'azul|blue|azul medianoche|medianoche|midnight|sierra|azul sierra|ultramarino|ultramarine|pacifico|azul pacifico'],
+  ['Morado', 'morado|morada|purpura|purple|deep purple|lila'], ['Dorado', 'dorado|dorada|gold|oro'], ['Rosado', 'rosado|rosada|rosa|pink'],
+  ['Verde', 'verde|green|alpino|teal|verde azulado'], ['Rojo', 'rojo|roja|red|product red'], ['Amarillo', 'amarillo|amarilla|yellow'], ['Gris', 'gris|gray|grey']
+];
+const QK_DEFECTOS = 'fisura|fisurad[oa]|rayad[oa]|rayon|rayones|rayado|golpe|golpead[oa]|pantalla rota|vidrio roto|tapa rota|quebrad[oa]|partid[oa]|sin face ?id|face ?id malo|sin true ?tone|pantalla cambiada|bateria cambiada|camara mala|detalle|detalles|mancha|manchas|pixel|pixeles|repuesto|generico|sin caja|con caja|caja|cargador|sellado|nuevo|como nuevo|usado|esim|e-sim|fisico|sim fisica|reportado|bloqueado|icloud';
+function parseLista(texto, ctx){
+  ctx = ctx || {};
+  const lineas = String(texto || '').split(/\r?\n|;|•|·/).map(x => x.replace(/^\s*(?:[-*•]+|\d+[.)])\s+/, '').trim()).filter(x => /\S/.test(x) && /\d/.test(x));
+  const items = lineas.map(raw => {
+    let t = ' ' + qkClean(raw) + ' ';
+    const it = {raw};
+    if(qkHas(t, 'recibid[oa]s?|parte\\s+de\\s+pago|me\\s+lo\\s+dieron|cambio|permuta|cambiad[oa]\\s+por')){ it.recibido = true; t = t.replace(qkRx('recibid[oa]s?|(?:en\\s+|como\\s+)?parte\\s+de\\s+pago|me\\s+lo\\s+dieron|cambio|permuta'), ' '); }
+    if(qkHas(t, 'comprad[oa]|compre|lo\\s+compre')){ t = t.replace(qkRx('comprad[oa]|lo\\s+compre|compre'), ' '); }
+    // batería e IMEI si vienen
+    const eq = qkEquipo(t); t = ' ' + eq.t + ' '; if(eq.eq.bateria) it.bateria = eq.eq.bateria; if(eq.eq.imei) it.imei = eq.eq.imei; if(eq.eq.almac) it.almac = eq.eq.almac;
+    // almacenamiento suelto: 64/128/256/512/1024 o "1tb" (no es precio)
+    t = t.replace(/(?<![\d.,])(64|128|256|512|1024)\s*(?:gb|g|gigas)?(?![\d.,]|\s*(?:mil|k|lucas|barras))/i, (m, a) => { if(!it.almac) it.almac = (a === '1024' ? '1TB' : a + 'GB'); return ' '; })
+         .replace(/(?<![\d.,])1\s*(?:tb|tera|teras)(?![\p{L}])/iu, () => { it.almac = '1TB'; return ' '; });
+    // color
+    for(const [nom, alts] of QK_COLOR_L){
+      const re = qkRx('(?:color\\s+)?(?:' + alts.split('|').map(a => a.split(' ').join('\\s+')).join('|') + ')', 'iu');
+      if(re.test(t)){ it.color = nom; t = t.replace(re, ' '); break; }
+    }
+    // defectos / estado → notas
+    const notas = [];
+    t = t.replace(qkRx(QK_DEFECTOS), m => { notas.push(m.toLowerCase()); return ' '; });
+    if(notas.length) it.notas = notas.join(', ');
+    if(notas.some(x => /^(nuevo|sellado|como nuevo)$/.test(x))) it.cond = 'nuevo';
+    else if(notas.some(x => !/^(con caja|caja|cargador|usado|esim|e-sim|fisico|sim fisica)$/.test(x))) it.cond = 'regular';
+    // precio: montos con unidad o sueltos (un teléfono: < 100 = millones, 100–999 = miles, 1000–9999 = miles)
+    let u = qkUnits(qkNumWords(qkCanon(qkSp(t))));
+    let precio = 0;
+    const mm = u.match(/(\d+)§/); if(mm){ precio = +mm[1]; u = u.replace(mm[0], ' '); }
+    if(!precio){
+      const toks = u.split(/\s+/); let idx = -1;
+      for(let i = toks.length - 1; i >= 0; i--){ if(/^\$?\d+(?:[.,]\d+)?$/.test(toks[i]) && !/^1[1-7]$/.test(toks[i].replace('$', '')) || /^\$?\d+[.,]\d+$/.test(toks[i])){ idx = i; break; } }
+      if(idx < 0){ for(let i = toks.length - 1; i >= 0; i--) if(/^\$?\d+(?:[.,]\d+)?$/.test(toks[i])){ idx = i; break; } }
+      if(idx >= 0){
+        const v = parseFloat(toks[idx].replace('$', '').replace(',', '.'));
+        precio = v < 100 ? Math.round(v * 1e6) : v < 10000 ? Math.round(v * 1e3) : Math.round(v);
+        toks.splice(idx, 1); u = toks.join(' ');
+      }
+    }
+    if(precio) it.buyPrice = precio;
+    // lo que queda: el modelo (si lo dijo)
+    let resto = qkSp(u.replace(/§/g, '').replace(qkRx('de|del|en|por|a|el|la|un|una|y|con|me|lo|pesos|millones|palos?|mil|lucas'), ' '));
+    if(resto && (guessCat(resto) === 'Celulares' || /(^| )1[1-7]( |$)|(^| )(pro|max|plus|mini|ultra|s\d{2}|a\d{2})( |$)/i.test(normKey(resto)))) it.modelo = qkModel(qkPretty(resto.replace(/^(iphone|i)\s*(?=\d)/i, 'iPhone ')));
+    else if(resto) it.notas = qkSp([it.notas, resto.toLowerCase()].filter(Boolean).join(', '));
+    if(it.modelo && /^\d/.test(it.modelo)) it.modelo = 'iPhone ' + it.modelo;
+    return it;
+  });
+  const faltaModelo = items.some(x => !x.modelo);
+  // sugerencia: por el color (Desert/Natural = iPhone 16 Pro / 15 Pro), por los modelos dichos en otras líneas o por el stock reciente
+  let sugerido = (items.find(x => x.modelo) || {}).modelo || '';
+  if(!sugerido && items.some(x => x.color === 'Desert')) sugerido = 'iPhone 16 Pro Max';
+  if(!sugerido && items.some(x => x.color === 'Natural')) sugerido = 'iPhone 15 Pro Max';
+  if(!sugerido && ctx.stock && ctx.stock.length){ const cel = ctx.stock.filter(x => x.cat === 'Celulares'); if(cel.length) sugerido = cel[cel.length - 1].desc.replace(/\s*\d+\s*gb.*$/i, ''); }
+  return {items, faltaModelo, sugerido};
+}
+/* nombre final de cada producto: "iPhone 16 Pro Max 256GB Desert" */
+const listaDesc = (it, modelo) => qkSp([it.modelo || modelo || 'Celular', it.almac, it.color].filter(Boolean).join(' '));
+
+if(typeof module !== 'undefined') module.exports = {parseLista, listaDesc, parseQuick, parseQuickMulti, CATS, GCATS, NEG_CATS, guessCat, guessGCat, normKey, bestMatch, qkMatchStock, qkClean};
