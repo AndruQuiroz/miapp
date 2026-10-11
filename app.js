@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.5.0';
+const APP_VERSION = '2.5.1';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -192,6 +192,7 @@ const hasData = () => pockets().some(b => +b.u > 1) ||
   ['items','gastos','ingresos','cobros','abonos','transfers','ajustes'].some(c => (DB[c] || []).length);
 
 /* ── Apartados (fondos): PARA QUÉ es la plata (§13). Bolsillo = DÓNDE está. ── */
+const FONDO_BASE = ['negocio', 'personal'];
 const fondos = () => fondosOrdenados(DB);
 const fondoValid = id => !!id && fondos().some(f => f.id === id);
 /* "💼 Negocio" (también para apartados borrados, para que el historial se lea bien) */
@@ -200,12 +201,22 @@ const fnName = id => {
   if(f) return (f.emoji ? f.emoji + ' ' : '') + (f.nombre || id);
   return id === 'personal' ? '👤 Personal' : id === 'negocio' ? '💼 Negocio' : String(id || '—');
 };
-const fondoOpts = withSaldo => { const bf = withSaldo ? balancesFondos(DB) : null; return fondos().map(f => [f.id, fnName(f.id) + (bf ? ' · ' + fmt(bf[f.id] || 0) : '')]); };
+/* El usuario NO separa la plata del negocio y la personal (por defecto): se ven juntas como "💵 Plata libre".
+   Los datos no cambian (fondoDe sigue igual): si algún día activa la separación, todo se reparte solo hacia atrás. */
+const juntos = () => !(CFG && CFG.separarNP);
+const LIBRE = '__libre', LIBRE_NOM = '💵 Plata libre';
+const fondosExtra = () => fondos().filter(f => !FONDO_BASE.includes(f.id));
+const libreSaldo = bf => (bf.negocio || 0) + (bf.personal || 0);
+const fondoOpts = withSaldo => {
+  const bf = withSaldo ? balancesFondos(DB) : null;
+  if(juntos()) return [[LIBRE, LIBRE_NOM + (bf ? ' · ' + fmt(libreSaldo(bf)) : '')]].concat(fondosExtra().map(f => [f.id, fnName(f.id) + (bf ? ' · ' + fmt(bf[f.id] || 0) : '')]));
+  return fondos().map(f => [f.id, fnName(f.id) + (bf ? ' · ' + fmt(bf[f.id] || 0) : '')]);
+};
 const otherFondo = id => { const fs = fondos(); const p = fs.find(f => f.id === 'personal'); if(p && p.id !== id) return p.id; const o = fs.find(f => f.id !== id); return o ? o.id : id; };
 const sumObj = o => Object.keys(o).reduce((a, k) => a + (+o[k] || 0), 0);
 /* resolvedor rápido (core.fondoResolver arma sus índices una sola vez) */
 const fondoRes = () => typeof fondoResolver === 'function' ? fondoResolver(DB) : (c, r) => fondoDe(c, r, DB);
-const FONDO_BASE = ['negocio', 'personal'];
+
 /* ¿algún registro nombra este apartado? (los de base se resuelven por defecto y nunca se borran) */
 const fondoUsed = id => ['items','gastos','ingresos','cobros','abonos','ajustes'].some(c => L(DB, c).some(r => r.fondo === id)) ||
   L(DB, 'repartos').some(r => r.from === id || r.to === id) ||
@@ -303,7 +314,7 @@ function rowHTML(r){
 const QUICK_EX = ['almuerzo 18 mil', 'compré ps5 1.2M nequi', 'vendí ps5 1.5M efectivo', 'envío 12k nequi', 'juan me debe 200k', 'juan abonó 50k nequi', 'retiré 100k nequi', 'sueldo 1.3M nequi'];
 
 /* Tarjeta "Organiza tu plata" (§13.4): hay datos, plata en caja y todavía no hay repartos ni saldo inicial repartido */
-const showOrganizar = caja => !CFG.fondosIntro && caja > 0 && hasData() && fondoValid('negocio') && fondoValid('personal') &&
+const showOrganizar = caja => !juntos() && !CFG.fondosIntro && caja > 0 && hasData() && fondoValid('negocio') && fondoValid('personal') &&
   !L(DB, 'repartos').length && !pockets().some(p => p.iniFondos && Object.keys(p.iniFondos).some(k => +p.iniFondos[k]));
 
 function renderInicio(){
@@ -373,8 +384,10 @@ function renderInicio(){
 
   /* apartados (§13.4): para qué es la plata; tocar → Repartir */
   const bf = balancesFondos(DB);
-  h += `<div class="pocks fons" data-testid="fondo-chips">${fondos().map(f => `<button type="button" class="pock fon" data-a="repartir" data-fondo="${esc(f.id)}" data-testid="fondo-chip" title="Repartir">
-    <small>${esc(fnName(f.id))}</small><b class="${(bf[f.id] || 0) < 0 ? 'neg' : ''}">${full(bf[f.id] || 0)}</b></button>`).join('')}
+  const fchips = juntos() ? (fondosExtra().length ? [{id: LIBRE, n: LIBRE_NOM, s: libreSaldo(bf)}].concat(fondosExtra().map(f => ({id: f.id, n: fnName(f.id), s: bf[f.id] || 0}))) : [])
+    : fondos().map(f => ({id: f.id, n: fnName(f.id), s: bf[f.id] || 0}));
+  if(fchips.length) h += `<div class="pocks fons" data-testid="fondo-chips">${fchips.map(f => `<button type="button" class="pock fon" data-a="repartir" data-fondo="${esc(f.id)}" data-testid="fondo-chip" title="Repartir">
+    <small>${esc(f.n)}</small><b class="${f.s < 0 && !(juntos() && f.id === LIBRE) ? 'neg' : ''}">${full(f.s)}</b></button>`).join('')}
     <button type="button" class="pock fon" data-a="goDinero"><small>Apartados</small><b>›</b></button></div>`;
 
   /* primera vez con apartados: ¿cuánto es del negocio? (descartable) */
@@ -508,16 +521,18 @@ function renderMovs(){
   $('#mvNext').disabled = ym >= today().slice(0, 7);
   $$('#mvFil button').forEach(b => b.classList.toggle('on', b.dataset.f === UI.mvF));
   /* filtro por apartado (§13.4): los repartos cuentan con signo para ese apartado; los traslados entre bolsillos no tienen apartado */
-  const sel = $('#mvFondo'), fs = fondos();
+  const sel = $('#mvFondo'), fs = juntos() ? [{id: LIBRE}].concat(fondosExtra()) : fondos();
   if(UI.mvFondo && !fs.some(f => f.id === UI.mvFondo)) UI.mvFondo = '';
   if(sel){
-    sel.innerHTML = `<option value="">🎯 Todos los apartados</option>` + fs.map(f => `<option value="${esc(f.id)}">${esc(fnName(f.id))}</option>`).join('');
+    sel.hidden = juntos() && !fondosExtra().length;
+    sel.innerHTML = `<option value="">🎯 Todos los apartados</option>` + fs.map(f => `<option value="${esc(f.id)}">${esc(f.id === LIBRE ? LIBRE_NOM : fnName(f.id))}</option>`).join('');
     sel.value = UI.mvFondo;
   }
   const fo = UI.mvFondo;
+  const inFo = x => fo === LIBRE ? FONDO_BASE.includes(x) : x === fo;
   const all = movs().filter(r => String(r.fecha || '').slice(0, 7) === ym)
-    .filter(r => !fo || r.fondo === fo || (r.col === 'repartos' && (r.from === fo || r.to === fo)))
-    .map(r => fo && r.col === 'repartos' ? Object.assign({}, r, {m: r.to === fo ? r.amt : -r.amt}) : r);
+    .filter(r => !fo || inFo(r.fondo) || (r.col === 'repartos' && (inFo(r.from) !== inFo(r.to))))
+    .map(r => fo && r.col === 'repartos' ? Object.assign({}, r, {m: inFo(r.to) ? r.amt : -r.amt}) : r);
   const rows = UI.mvF === 'todos' ? all : all.filter(r => r.f === UI.mvF);
   const entro = rows.reduce((a, r) => a + (r.m > 0 ? r.m : 0), 0), salio = rows.reduce((a, r) => a + (r.m < 0 ? -r.m : 0), 0);
   let h = `<div class="tot">
@@ -727,8 +742,13 @@ function fondoNegTxt(f, x, bf){
 }
 
 function renderFondos(){
-  const bf = balancesFondos(DB), fs = fondos();
-  let h = fs.map(f => {
+  const bf = balancesFondos(DB), fs = juntos() ? fondosExtra() : fondos();
+  let h = '';
+  if(juntos()) h += `<div class="it" data-testid="fondo" data-id="${LIBRE}"><div class="it-h"><div style="min-width:0"><div class="it-n">${LIBRE_NOM}</div>
+      <div class="meta">Toda tu plata junta (negocio y personal), menos lo que tengas apartado.</div></div>
+      <div class="alert-m" data-testid="fondo-saldo">${full(libreSaldo(bf))}</div></div>
+      ${fondosExtra().length ? `<div class="btns"><button type="button" class="btn b-gh" data-a="repartir" data-fondo="${LIBRE}">🔀 Repartir</button></div>` : ''}</div>`;
+  h += fs.map(f => {
     const s = bf[f.id] || 0, meta = +f.meta || 0;
     const pct = meta > 0 ? Math.max(0, Math.min(100, Math.round(s / meta * 100))) : 0;
     const borrable = !FONDO_BASE.includes(f.id) && !s && !fondoUsed(f.id);
@@ -743,8 +763,13 @@ function renderFondos(){
   }).join('');
   h += `<div class="btns" style="margin-bottom:12px"><button type="button" class="btn b-g" data-a="nuevoFondo" data-testid="fondo-nuevo">+ Nuevo apartado</button>
     <button type="button" class="btn b-b" data-a="form" data-k="reparto">🔀 Repartir</button></div>
-    <p class="hint">Un apartado dice <b>para qué</b> es la plata, no dónde está. Compras y ventas van a <b>💼 Negocio</b>; gastos personales e ingresos a <b>👤 Personal</b>.
-    En cada formulario lo cambias con <b>“Plata de:”</b>. Repartir mueve plata entre apartados sin sacarla del bolsillo. Solo puedes eliminar un apartado en $0 y sin movimientos.</p>`;
+    ${juntos() ? `<p class="hint">Un apartado es plata con un propósito (🏠 Arriendo, 🐷 Ahorro…). Lo que no está apartado es tu <b>💵 Plata libre</b>.
+    Repartir mueve plata a un apartado sin sacarla del bolsillo. La ganancia del negocio se calcula igual: la app separa los <b>gastos</b> personales de los del negocio.</p>`
+    : `<p class="hint">Un apartado dice <b>para qué</b> es la plata, no dónde está. Compras y ventas van a <b>💼 Negocio</b>; gastos personales e ingresos a <b>👤 Personal</b>.
+    En cada formulario lo cambias con <b>“Plata de:”</b>. Repartir mueve plata entre apartados sin sacarla del bolsillo. Solo puedes eliminar un apartado en $0 y sin movimientos.</p>`}
+    <div class="it" style="margin-top:10px"><div class="it-h"><div style="min-width:0"><div class="it-n">Separar la plata del negocio y la personal</div>
+      <div class="meta">${juntos() ? 'Apagado: tu plata se ve junta. Actívalo si algún día quieres llevar caja aparte para el negocio.' : 'Activado: ves 💼 Negocio y 👤 Personal por separado.'}</div></div>
+      <button type="button" class="btn ${juntos() ? 'b-gh' : 'b-b'}" data-a="toggleSepNP" data-testid="toggle-separar" style="flex-shrink:0">${juntos() ? 'Activar' : 'Desactivar'}</button></div></div>`;
   $('#fonBody').innerHTML = h;
 }
 
@@ -1024,9 +1049,9 @@ function fieldHTML(f){
   } else if(f.type === 'date'){
     inp = `<input class="in" ${common} type="date" value="${esc(val)}">`;
   } else if(f.type === 'fondo'){                      // §13.4: chip compacto "Plata de: 💼 Negocio ▾"
-    inp = `<div class="fchip" ${common} data-k="${f.k}"><button type="button" class="fchip-b" data-fondo-toggle aria-expanded="false" data-testid="${id}-chip">Plata de: <b>${esc(fnName(val))}</b> <span aria-hidden="true">▾</span></button>
+    inp = `<div class="fchip" ${common} data-k="${f.k}"><button type="button" class="fchip-b" data-fondo-toggle aria-expanded="false" data-testid="${id}-chip">Plata de: <b>${esc(juntos() && (FONDO_BASE.includes(val) || val === LIBRE) ? LIBRE_NOM : fnName(val))}</b> <span aria-hidden="true">▾</span></button>
       <div class="opts" data-k="${f.k}" hidden>${opts.map(([o, l]) =>
-      `<button type="button" class="${String(o) === String(val) ? 'on' : ''}" data-v="${esc(o)}" data-testid="${id}-${esc(o)}">${esc(l)}</button>`).join('')}</div></div>`;
+      `<button type="button" class="${String(o) === String(val) || (o === LIBRE && FONDO_BASE.includes(val)) ? 'on' : ''}" data-v="${esc(o)}" data-testid="${id}-${esc(o)}">${esc(l)}</button>`).join('')}</div></div>`;
   } else if(f.type === 'select' || (f.type === 'seg' && opts.length > 5 && !f.chips)){
     inp = `<select class="in" ${common}>${opts.map(([o, l]) => `<option value="${esc(o)}"${String(o) === String(val) ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   } else if(f.type === 'seg'){
@@ -1056,7 +1081,8 @@ function openForm(kind, d, opts){
   d = Object.assign({}, d || {});
   if(d.fondo != null && !fondoValid(d.fondo)) delete d.fondo;      // apartado del parser/registro que ya no existe → por defecto
   if(spec.prep) spec.prep(d);
-  const fields = spec.fields(d);
+  let fields = spec.fields(d);
+  if(juntos() && !fondosExtra().length) fields = fields.filter(f => f.type !== 'fondo');
   const v = {};
   fields.forEach(f => { let x = d[f.k]; if(x === undefined || x === null) x = f.val !== undefined ? f.val : ''; v[f.k] = x; });
   const fondoFixed = !!d.fondo;
@@ -1754,8 +1780,11 @@ const FORMS = {
     title: '🔀 Repartir plata',
     prep: d => {
       if(!d.fecha) d.fecha = today();
-      if(d.from && !fondoValid(d.from)) d.from = '';
-      if(d.to && !fondoValid(d.to)) d.to = '';
+      if(juntos()){ if(FONDO_BASE.includes(d.from)) d.from = LIBRE; if(FONDO_BASE.includes(d.to)) d.to = LIBRE; }
+      const ok = x => fondoValid(x) || (juntos() && x === LIBRE);
+      if(d.from && !ok(d.from)) d.from = '';
+      if(d.to && !ok(d.to)) d.to = '';
+      if(juntos()){ if(!d.from && !d.to) d.from = LIBRE; if(!d.to || d.to === d.from) d.to = d.from === LIBRE ? ((fondosExtra()[0] || {}).id || '') : LIBRE; if(!d.from) d.from = d.to === LIBRE ? ((fondosExtra()[0] || {}).id || '') : LIBRE; return; }
       if(!d.from && !d.to) d.from = 'personal';
       if(!d.from) d.from = d.to === 'personal' ? (fondoValid('negocio') ? 'negocio' : otherFondo(d.to)) : (fondoValid('personal') ? 'personal' : otherFondo(d.to));
       if(!d.to || d.to === d.from) d.to = d.from === 'personal' ? (fondoValid('negocio') ? 'negocio' : otherFondo(d.from)) : otherFondo(d.from);
@@ -1768,10 +1797,11 @@ const FORMS = {
       {k: 'fecha', label: 'Fecha', type: 'date'},
       {k: 'nota', label: 'Nota (opcional)', type: 'text', ph: 'Ej: ganancia de octubre'}
     ],
-    change: (k, v, set) => { if(k === 'from' && v.from === v.to) set('to', otherFondo(v.from)); if(k === 'to' && v.from === v.to) set('from', otherFondo(v.to)); },
+    change: (k, v, set) => { const oth = x => juntos() ? (x === LIBRE ? ((fondosExtra()[0] || {}).id || LIBRE) : LIBRE) : otherFondo(x); if(k === 'from' && v.from === v.to) set('to', oth(v.from)); if(k === 'to' && v.from === v.to) set('from', oth(v.to)); },
     save: v => {
       const monto = num(v.monto);
-      if(!fondoValid(v.from) || !fondoValid(v.to)) return {err: 'Elige los dos apartados'};
+      if(juntos()){ v = Object.assign({}, v); if(v.from === LIBRE) v.from = 'personal'; if(v.to === LIBRE) v.to = 'personal'; }
+      if(!fondoValid(v.from) || !fondoValid(v.to)) return {err: juntos() && !fondosExtra().length ? 'Primero crea un apartado (ej: 🐷 Ahorro) para repartirle plata' : 'Elige los dos apartados'};
       if(v.from === v.to) return {err: 'Elige apartados distintos', k: 'to'};
       if(monto <= 0) return {err: '¿Cuánto vas a repartir?', k: 'monto'};
       const rec = put('repartos', {from: v.from, to: v.to, monto, fecha: v.fecha || today(), nota: clean(v.nota)});
@@ -2070,7 +2100,8 @@ const ACT = {
   nuevoTope: el => openForm('tope', el.dataset.cat ? {cat: el.dataset.cat, limite: +el.dataset.lim || ''} : {}),
   editTope: el => openForm('tope', {id: el.dataset.id}),
   goDinero: () => { UI.masSeg = 'dinero'; UI.dnSeg = 'para'; setView('mas'); },
-  repartir: el => openForm('reparto', el.dataset.fondo ? {to: el.dataset.fondo} : {}),
+  repartir: el => { if(juntos() && !fondosExtra().length){ toast('Crea primero un apartado (ej: 🐷 Ahorro) en Más → Dinero → ¿Para qué es?'); return; } openForm('reparto', el.dataset.fondo ? (el.dataset.fondo === LIBRE ? {from: LIBRE} : {to: el.dataset.fondo}) : {}); },
+  toggleSepNP: () => { CFG.separarNP = !CFG.separarNP; saveCfg(); render(); toast(CFG.separarNP ? 'Ahora ves 💼 Negocio y 👤 Personal por separado' : 'Tu plata se ve junta como 💵 Plata libre'); },
   nuevoFondo: () => openForm('fondo', {}),
   editFondo: el => openForm('fondo', {id: el.dataset.id}),
   delFondo: el => delFondo(el.dataset.id),
@@ -2198,7 +2229,7 @@ function loteChips(i, k, opts, val){
 function loteCardsHTML(){
   const cards = [];
   const card = (i, ico, html, extra, ac) => cards.push(`<div class="alert" data-testid="lote-card" data-i="${i}" style="--ac:${ac}">${
-    i >= 0 && LOTE.ops[i].d.fondo ? `<div class="meta" style="float:right;margin:0 0 4px 6px" data-testid="lote-fondo">Plata de: ${esc(fnName(LOTE.ops[i].d.fondo))}</div>` : ''}
+    i >= 0 && LOTE.ops[i].d.fondo && !(juntos() && FONDO_BASE.includes(LOTE.ops[i].d.fondo)) ? `<div class="meta" style="float:right;margin:0 0 4px 6px" data-testid="lote-fondo">Plata de: ${esc(fnName(LOTE.ops[i].d.fondo))}</div>` : ''}
     <div class="alert-h"><div style="min-width:0;flex:1"><div class="alert-t" style="font-weight:500">${ico} ${html}</div></div>
     ${i >= 0 ? `<div style="display:flex;gap:4px;flex-shrink:0"><button type="button" class="ibtn" data-a="loteEdit" data-i="${i}" aria-label="Editar">✏️</button>
     <button type="button" class="ibtn" data-a="loteDel" data-i="${i}" aria-label="Quitar">✕</button></div>` : ''}</div>${extra || ''}</div>`);
