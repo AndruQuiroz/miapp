@@ -327,6 +327,53 @@ function monthStats(db, ym){
   return {sold, nVentas: sold.length, ventas, costo, bruta, gN, gP, neta, margen: ventas ? neta / ventas * 100 : 0, compras, ing, diasProm, cats};
 }
 
+
+/* ── Rendimiento (ronda 8): ¿estoy creciendo o me estoy comiendo el capital? ──
+   Patrimonio = plata en bolsillos + stock (a lo que costó) + lo que te deben, a una fecha. */
+function dbAlCorte(db, fecha){
+  const ok = d => !d || String(d) <= fecha;
+  const out = {};
+  COLS.forEach(c => { out[c] = (db[c] || []).slice(); });
+  out.items = L(db, 'items').filter(i => ok(i.buyDate)).map(i => i.status === 'sold' && i.sellDate && String(i.sellDate) > fecha
+    ? Object.assign({}, i, {status: 'stock', sellPrice: undefined, sellPaid: undefined, sellPocket: undefined, sellDate: undefined}) : i);
+  ['gastos', 'ingresos', 'abonos', 'transfers', 'ajustes', 'repartos', 'cobros'].forEach(c => { out[c] = L(db, c).filter(x => ok(x.fecha)); });
+  return out;
+}
+function patrimonio(db, fecha){
+  const d = fecha ? dbAlCorte(db, fecha) : db;
+  const b = balances(d), caja = Object.keys(b).reduce((a, k) => a + (b[k] || 0), 0);
+  const stock = sum(L(d, 'items').filter(i => i.status !== 'sold'), 'buyPrice');
+  const deben = sum(cobrosPend(d), 'pend');
+  return {caja, stock, deben, total: caja + stock + deben};
+}
+const finDeMes = ym => { const [y, m] = ym.split('-').map(Number); return ymd(new Date(y, m, 0)); };
+const mesAnterior = ym => { const [y, m] = ym.split('-').map(Number); return ymd(new Date(y, m - 2, 1)).slice(0, 7); };
+function rendimiento(db, ym){
+  const hoy = today();
+  ym = ym || hoy.slice(0, 7);
+  const actual = ym === hoy.slice(0, 7);
+  const fin = actual ? hoy : finDeMes(ym), ini = finDeMes(mesAnterior(ym));
+  const pIni = patrimonio(db, ini), pFin = patrimonio(db, fin);
+  const s = monthStats(db, ym);
+  const disponible = s.neta + s.ing;                       // lo que entró de verdad para gastar: ganancia + ingresos personales
+  const pctGasto = s.neta > 0 ? s.gP / s.neta : null;
+  const comido = Math.max(0, s.gP - Math.max(0, disponible));
+  const roi = pIni.total > 0 ? s.neta / pIni.total : null; // cuánto rindió el capital en el mes
+  const vueltas = s.diasProm ? Math.round(30 / Math.max(1, s.diasProm) * 10) / 10 : null;
+  const quietos = L(dbAlCorte(db, fin), 'items').filter(i => i.status !== 'sold' && daysBetween(i.buyDate, fin) >= 30);
+  const serie = [];
+  let m = ym;
+  for(let k = 0; k < 6; k++){ serie.unshift({ym: m, total: patrimonio(db, m === hoy.slice(0, 7) ? hoy : finDeMes(m)).total}); m = mesAnterior(m); }
+  let estado = 'sin-datos';
+  if(s.nVentas || s.gP){
+    if(comido > 0) estado = 'comiendo';
+    else if(pctGasto != null && pctGasto > 0.8) estado = 'justo';
+    else estado = 'creciendo';
+  }
+  return {ym, actual, pIni, pFin, cambio: pFin.total - pIni.total, neta: s.neta, gP: s.gP, ing: s.ing, pctGasto, comido, roi,
+    diasProm: s.diasProm, vueltas, margen: s.margen, quietos: {n: quietos.length, total: sum(quietos, 'buyPrice')}, serie, estado};
+}
+
 /* ── Textos para notificaciones (MacroDroid) ── */
 function summaryText(db){
   const t = today(), from = shiftDate(t, -6), inR = d => d && d >= from && d <= t;
@@ -647,6 +694,6 @@ function contactoStats(db, contactoId){
   };
 }
 
-if(typeof module !== 'undefined') module.exports = {COLS, emptyDB, mergeDB, L, sum, ymd, today, shiftDate, daysBetween, MESES, fmt, full, fd, monthLabel, extractMonto, parseMoney, parseNoti, balances, cobroPagado, cobrosPend, monthStats, summaryText, remindersText,
+if(typeof module !== 'undefined') module.exports = {dbAlCorte, patrimonio, rendimiento, COLS, emptyDB, mergeDB, L, sum, ymd, today, shiftDate, daysBetween, MESES, fmt, full, fd, monthLabel, extractMonto, parseMoney, parseNoti, balances, cobroPagado, cobrosPend, monthStats, summaryText, remindersText,
   SEED_BOLSILLOS, SEED_FONDOS, ensureSeeds, fondoDe, balancesFondos, fondosOrdenados, fondosLinea,
   normModelo, normNombre, costoItem, itemHistory, priceRef, topesEstado, monthInsight, contactoStats};

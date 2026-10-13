@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.5.1';
+const APP_VERSION = '2.6.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -391,6 +391,8 @@ function renderInicio(){
     <button type="button" class="pock fon" data-a="goDinero"><small>Apartados</small><b>›</b></button></div>`;
 
   /* primera vez con apartados: ¿cuánto es del negocio? (descartable) */
+  { const rr = rendimiento(DB); if(rr.estado === 'comiendo' && rr.comido >= 50000) h += `<div class="alert" style="--ac:var(--R)" data-testid="alerta-capital"><div class="alert-t">🔻 Este mes gastaste ${full(rr.comido)} más de lo que entró</div>
+    <div class="meta">Te estás comiendo capital del negocio. Mira el detalle en Más → Análisis.</div></div>`; }
   if(showOrganizar(caja)) h += `<div class="alert" style="--ac:var(--P)" data-testid="organizar"><div class="alert-t">🎯 Organiza tu plata en apartados</div>
     <div class="meta">Ahora la app separa <b>dónde</b> está tu plata (Nequi, efectivo…) de <b>para qué</b> es (💼 negocio, 👤 personal, 🏠 arriendo…). ¿Cuánto de lo que tienes hoy es capital del negocio?</div>
     <div class="pbtns"><button type="button" class="btn b-b" data-a="form" data-k="organizar" data-testid="organizar-go">Organizar</button>
@@ -584,12 +586,40 @@ function renderMas(){
   else renderAjustes();
 }
 
+
+/* ── ¿Cómo vas? (patrimonio, gasto vs ganancia, rotación) ── */
+const pct = x => Math.round(x * 100) + '%';
+function rendHTML(ym){
+  const r = rendimiento(DB, ym);
+  if(r.estado === 'sin-datos' && !r.pFin.total) return '';
+  const cls = {creciendo: 'var(--G)', justo: 'var(--Y)', comiendo: 'var(--R)', 'sin-datos': 'var(--B)'}[r.estado];
+  let titulo;
+  if(r.estado === 'comiendo') titulo = `🔻 Gastaste ${full(r.comido)} más de lo que entró: te estás comiendo capital`;
+  else if(r.estado === 'justo') titulo = r.pctGasto > 1 ? `⚠️ Gastaste más de lo que ganó el negocio (${pct(r.pctGasto)}); lo cubrieron tus otros ingresos` : `⚠️ Gastaste el ${pct(r.pctGasto)} de lo que ganaste: quedó poco para crecer`;
+  else if(r.estado === 'creciendo') titulo = r.pctGasto != null ? `📈 Vas bien: gastaste el ${pct(r.pctGasto)} de lo que ganaste` : '📈 Vas bien';
+  else titulo = '📈 Tu patrimonio';
+  const max = Math.max(1, ...r.serie.map(x => x.total));
+  const barras = `<div class="rend-serie" aria-label="Patrimonio de los últimos 6 meses">${r.serie.map(x => `<div class="rs"><i style="height:${Math.max(3, Math.round(x.total / max * 42))}px"></i><small>${esc(monthLabel(x.ym).split(' ')[0])}</small></div>`).join('')}</div>`;
+  const fila = (l, v, sub, c) => `<div class="rf"><span>${l}</span><b class="mono ${c || ''}">${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  return `<div class="alert rend" style="--ac:${cls}" data-testid="rendimiento"><div class="alert-t">${esc(titulo)}</div>
+    <div class="rend-top"><div><div class="lbl">Patrimonio ${r.actual ? 'hoy' : 'al cierre'}</div><div class="val">${full(r.pFin.total)}</div>
+      <div class="sub ${r.cambio < 0 ? 'neg' : 'pos'}">${r.cambio >= 0 ? '▲' : '▼'} ${full(Math.abs(r.cambio))} en el mes</div></div>${barras}</div>
+    ${fila('💵 Plata en bolsillos', full(r.pFin.caja))}${fila('📦 Stock (a lo que costó)', full(r.pFin.stock))}${fila('🤝 Te deben', full(r.pFin.deben))}
+    <div class="rsep"></div>
+    ${fila('Ganancia del negocio', full(r.neta), '', r.neta < 0 ? 'neg' : 'pos')}
+    ${fila('Gastos personales', full(r.gP), r.pctGasto != null ? pct(r.pctGasto) + ' de la ganancia' : '', r.estado === 'comiendo' ? 'neg' : '')}
+    ${r.roi != null ? fila('Rendimiento del capital', pct(r.roi), 'ganancia ÷ patrimonio al iniciar el mes') : ''}
+    ${r.diasProm != null ? fila('Rotación', r.diasProm + ' días', r.vueltas ? `tu plata da ~${r.vueltas} vueltas al mes` : '') : ''}
+    ${r.quietos.n ? fila('⏳ Plata quieta (+30 días)', full(r.quietos.total), plural(r.quietos.n, 'producto'), 'yel') : ''}
+    <p class="hint" style="margin-top:8px">Patrimonio = bolsillos + stock + lo que te deben. Si sube mes a mes, estás creciendo. Meta sana: gastar en lo personal máximo la mitad de la ganancia.</p></div>`;
+}
+
 function renderAnalisis(){
   const ym = UI.anMonth, s = monthStats(DB, ym);
   $('#anMonth').textContent = ymLabel(ym);
   $('#anNext').disabled = ym >= today().slice(0, 7);
   const k = (lbl, v, sub, ac, cls) => `<div class="card ${ac}"><div class="lbl">${lbl}</div><div class="val ${cls || ''}">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
-  $('#anKpis').innerHTML = `<div class="kpis">
+  $('#anKpis').innerHTML = rendHTML(ym) + `<div class="kpis">
     ${k('Ventas', fmt(s.ventas), plural(s.nVentas, 'venta'), 'a-g')}
     ${k('Utilidad bruta', fmt(s.bruta), 'ventas − costo', 'a-t', s.bruta < 0 ? 'neg' : '')}
     ${k('Gastos negocio', fmt(s.gN), 'envíos, empaques…', 'a-o')}
