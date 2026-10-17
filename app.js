@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.6.0';
+const APP_VERSION = '2.7.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -972,7 +972,11 @@ async function ocrRun(files){
   if(!OCR || !files.length) return;
   const st = OCR, n = files.length, primera = typeof Tesseract === 'undefined';
   st.busy = true;
-  if(st.mode === 'ficha'){
+  if(st.mode === 'movs'){
+    openInfo({kind: 'ocr'}, '📸 Leyendo tus movimientos', `<p class="hint" id="ocrTxt" data-testid="ocr-progreso" style="margin-bottom:8px">${primera ? 'Descargando el lector (solo la primera vez, ~4 MB)…' : `Leyendo foto 1 de ${n}…`}</p>
+      <div class="bar"><i id="ocrBar" style="width:3%"></i></div><p class="hint" style="margin-top:10px">Todo se lee aquí en tu celular: la foto no se sube a ningún lado.</p>`,
+      '<button type="button" class="btn b-gh" disabled>Leyendo…</button>');
+  } else if(st.mode === 'ficha'){
     const it = get('items', st.itemId);
     openInfo({kind: 'ocr', id: st.itemId}, '📷 Leyendo ' + (it ? it.desc : 'la foto'), `<p class="hint" id="ocrTxt" data-testid="ocr-progreso" style="margin-bottom:8px">${primera ? 'Descargando el lector (solo la primera vez, ~4 MB)…' : `Leyendo foto 1 de ${n}…`}</p>
       <div class="bar"><i id="ocrBar" style="width:3%"></i></div><p class="hint" style="margin-top:10px">Todo se lee aquí en tu celular: la foto no se sube a ningún lado.</p>`,
@@ -984,12 +988,14 @@ async function ocrRun(files){
     st.busy = false; OCR = null;
     const sin = navigator.onLine === false || /descargar|internet|network|fetch|load/i.test(String(e && e.message || e));
     toast(sin ? 'No pude descargar el lector de fotos. Revisa tu internet e intenta otra vez (después funciona sin señal).' : 'No pude leer la foto: ' + (e && e.message || e), {err: true, ms: 6000});
-    if(st.mode === 'ficha'){ if(get('items', st.itemId)) openFicha(st.itemId); else closeInfo(); } else { const m = $('#ocrFormMsg'); if(m) m.textContent = ''; }
+    if(st.mode === 'movs') closeInfo();
+    else if(st.mode === 'ficha'){ if(get('items', st.itemId)) openFicha(st.itemId); else closeInfo(); } else { const m = $('#ocrFormMsg'); if(m) m.textContent = ''; }
     return;
   }
   st.busy = false; OCR = null;
   r = r || {};
   if(st.mode === 'form') ocrToForm(r);
+  else if(st.mode === 'movs') openFotoMovs(r.texto || '', r);
   else ocrConfirm(st.itemId, r);
 }
 const OCR_KEYS = [['imei', 'IMEI'], ['imei2', 'IMEI 2'], ['bateria', 'Batería %'], ['almac', 'Almacenamiento'], ['serie', 'Número de serie']];
@@ -2545,6 +2551,179 @@ function startVoice(){
   try { rec.start(); } catch(e){ REC = null; mic.classList.remove('rec'); gboard(); }
 }
 
+
+/* ═════════ MODO VOZ "¿Qué hiciste?" (botón de la cortina / aviso de Nequi vía MacroDroid) ═════════
+   ?voz=1                     → abre esta hoja y empieza a escuchar
+   ?voz=1&noti=<texto>&bol=id → con el contexto de una notificación (monto, a quién, bolsillo)
+   ?q=<frase>                 → registra la frase directo (abre "Esto entendí" / el formulario para confirmar) */
+let VOZ = null, VREC = null;
+function vozBolsillo(id){ return pockets().find(p => p.id === id) ? id : (pockets().find(p => p.id === 'nequi') || pockets()[0] || {id: ''}).id; }
+function openVoz(o){
+  o = o || {};
+  const n = o.noti ? parseNoti(o.noti) : null;
+  VOZ = {noti: o.noti || '', n, bol: vozBolsillo(o.bol), texto: ''};
+  const ctx = n && n.monto ? `<div class="alert" style="--ac:${n.dir === 'in' ? 'var(--G)' : 'var(--R)'};margin-bottom:12px" data-testid="voz-noti">
+      <div class="alert-t">${n.dir === 'in' ? '⬇️ Te entraron' : n.dir === 'out' ? '⬆️ Salieron' : '💸'} <b class="mono">${full(n.monto)}</b>${n.quien ? ` · ${esc(titleCase(n.quien))}` : ''}</div>
+      <div class="meta">${esc(pn(VOZ.bol))} · “${esc(o.noti)}”</div></div>` : '';
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const body = ctx + `<div class="voz">
+      <button type="button" class="voz-mic" id="vozMic" data-a="vozMic" data-testid="voz-mic" aria-label="Hablar">🎙️</button>
+      <div class="voz-st" id="vozSt">${SR ? 'Toca y cuéntame qué hiciste' : 'Escribe o usa el micrófono del teclado'}</div>
+      <div class="hint" style="margin-top:2px">${n && n.monto ? 'Ej: “almuerzo”, “envío del 13”, “abono de Camilo”, “venta del 15 pro”' : 'Ej: “vendí el 13 en 1.6 nequi”, “almuerzo 18 mil”, “compré un 14 en 1.9”'}</div></div>
+    <textarea class="in" id="vozTxt" data-testid="voz-texto" rows="3" placeholder="Lo que digas aparece aquí (puedes corregirlo)"></textarea>`;
+  openInfo({kind: 'voz'}, n && n.monto ? '🎙️ ¿Qué fue esto?' : '🎙️ ¿Qué hiciste?', body,
+    `<button type="button" class="btn b-gh" data-a="vozLuego" data-testid="voz-luego">${n && n.monto ? 'Luego' : 'Cancelar'}</button>
+     <button type="button" class="btn b-g" data-a="vozOk" data-testid="voz-ok">Registrar</button>`);
+  if(SR && o.auto !== false) setTimeout(vozEscuchar, 350);
+}
+function vozEscuchar(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const st = $('#vozSt'), mic = $('#vozMic'), ta = $('#vozTxt');
+  if(!VOZ || !mic) return;
+  if(VREC){ try { VREC.stop(); } catch(e){} return; }
+  if(!SR || navigator.onLine === false){ if(st) st.textContent = 'Sin dictado aquí: usa el micrófono del teclado 🎤'; if(ta) ta.focus(); return; }
+  let rec; try { rec = new SR(); } catch(e){ if(ta) ta.focus(); return; }
+  VREC = rec;
+  rec.lang = 'es-CO'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+  const base = ta ? ta.value.trim() : '';
+  rec.onstart = () => { mic.classList.add('rec'); if(st) st.textContent = 'Te escucho…'; };
+  rec.onresult = e => {
+    let t = ''; for(let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+    if(ta) ta.value = (base ? base + ' ' : '') + t.trim();
+    const last = e.results[e.results.length - 1];
+    if(last && last.isFinal && ta && ta.value.trim()) setTimeout(() => { if(VOZ && !VREC) vozRegistrar(); }, 900);   // dijo algo: lo registra solo
+  };
+  rec.onerror = e => { const er = e && e.error; if(st) st.textContent = er === 'no-speech' ? 'No te escuché. Toca 🎙️ otra vez' : er === 'not-allowed' ? 'Dale permiso al micrófono (o usa el del teclado)' : 'Toca 🎙️ para intentar otra vez'; };
+  rec.onend = () => { if(VREC === rec) VREC = null; mic.classList.remove('rec'); if(st && st.textContent === 'Te escucho…') st.textContent = 'Toca 🎙️ para seguir hablando'; };
+  try { rec.start(); } catch(e){ VREC = null; mic.classList.remove('rec'); }
+}
+/* arma la frase final: si vino de una notificación y no dijo monto/bolsillo, se completan con los de la notificación */
+function vozFrase(txt){
+  txt = clean(txt);
+  const n = VOZ && VOZ.n;
+  if(!n || !n.monto) return txt;
+  if(!extractMonto(txt).monto) txt += ' ' + n.monto;
+  const bolDicho = parseQuickMulti(txt, quickCtx()).some(r => r.d && (r.d.bolsillo || r.d.buyPocket || r.d.sellPocket || r.d.from));
+  if(!bolDicho) txt += ' ' + (pn(VOZ.bol) || 'nequi').toLowerCase();
+  const k = parseQuick(txt, quickCtx()).kind;
+  if(n.dir === 'in' && k === 'gasto' && !/(gast|pagu|compr|cost)/i.test(txt)) txt = 'recibí ' + txt;
+  return txt;
+}
+function vozRegistrar(){
+  if(!VOZ) return;
+  if(VREC){ try { VREC.stop(); } catch(e){} }
+  const ta = $('#vozTxt'), raw = ta ? ta.value : '';
+  if(!clean(raw)){ toast('Cuéntame qué hiciste (o toca Luego)'); return; }
+  const frase = vozFrase(raw);
+  if(VOZ.noti){ L(DB, 'pend').filter(x => x.raw === VOZ.noti).forEach(x => remove('pend', x.id)); saveDB(); }
+  VOZ = null; closeInfo();
+  const q = $('#qInput'); if(q) q.value = frase;
+  setTimeout(() => runQuick(frase), 230);
+}
+Object.assign(ACT, {
+  vozMic: () => vozEscuchar(),
+  vozOk: () => vozRegistrar(),
+  vozLuego: () => {
+    if(VREC){ try { VREC.stop(); } catch(e){} }
+    if(VOZ && VOZ.n && VOZ.n.monto){   // queda en "Por clasificar" para no olvidarlo
+      put('pend', {raw: VOZ.noti, monto: VOZ.n.monto, dir: VOZ.n.dir, quien: VOZ.n.quien || '', fecha: today(), bolsillo: VOZ.bol, t: Date.now()});
+      VOZ = null; closeInfo(); commit('📲 Quedó en “Por clasificar”');
+    } else { VOZ = null; closeInfo(); }
+  }
+});
+
+
+/* ═════════ PANTALLAZO DE MOVIMIENTOS → todos los gastos y entradas de una (movs.js) ═════════ */
+let FMOV = null;   // {lista, bolsillo, saldo}
+const MV_ACC = [['pend', '📲 Por clasificar (luego)'], ['ingreso', '➕ Ingreso (no es venta)'], ['retiro', '🔁 Retiro a efectivo'], ['ignorar', '🚫 No registrar']];
+function fotoMovsBolsillo(texto){
+  const t = normKey(texto), ps = pockets();
+  const banco = ps.find(p => p.id !== 'nequi' && p.id !== 'efectivo' && normKey(p.nombre).length > 3 && t.includes(normKey(p.nombre)) && !/nequi/.test(t));
+  return (banco || ps.find(p => p.id === 'nequi') || ps[0] || {id: ''}).id;
+}
+function openFotoMovs(texto, r){
+  const movs = parseMovimientos(texto, {hoy: today()});
+  if(!movs.length){
+    const tel = r && (r.imei || r.bateria);
+    toast(tel ? 'Esa foto es la info de un celular: ábrela desde el producto en Stock (📷 Leer datos)' : 'No encontré movimientos en la foto. Usa el pantallazo de la lista de movimientos, que se vean los montos con $', {err: true, ms: 6500});
+    return;
+  }
+  const bolsillo = fotoMovsBolsillo(texto);
+  FMOV = {bolsillo, saldo: movs.saldo, texto, lista: clasificarMovs(DB, movs, {bolsillo})};
+  renderFotoMovs();
+}
+function fotoMovsOpts(m){
+  const o = [];
+  if(m.dir !== 'in') GCATS.forEach(c => o.push(['gasto:' + c, '💸 Gasto · ' + c]));
+  if(m.dir !== 'out') cobrosPend(DB).forEach(c => o.push(['abono:' + c.id, '💵 Abono de ' + c.nombre + ' (debe ' + fmt(c.pend) + ')']));
+  MV_ACC.forEach(([k, l]) => { if(k === 'retiro' && m.dir === 'in') return; if(k === 'ingreso' && m.dir === 'out') return; o.push([k, l]); });
+  return o;
+}
+const fotoMovsVal = m => m.accion === 'gasto' ? 'gasto:' + (m.cat || 'Otro') : m.accion === 'abono' ? 'abono:' + m.cobroId : m.accion;
+function renderFotoMovs(){
+  if(!FMOV) return;
+  const L0 = FMOV.lista, nuevos = L0.filter(m => m.accion !== 'ignorar'), ya = L0.length - nuevos.length;
+  const ent = sum(nuevos.filter(m => m.dir === 'in'), 'monto'), sal = sum(nuevos.filter(m => m.dir !== 'in'), 'monto');
+  const segs = pockets().map(p => `<button type="button" class="${p.id === FMOV.bolsillo ? 'on' : ''}" data-a="movsBol" data-id="${esc(p.id)}">${esc(p.nombre)}</button>`).join('');
+  const app = balances(DB)[FMOV.bolsillo] || 0;
+  const saldoH = FMOV.saldo != null ? `<div class="hint" style="margin:-2px 0 10px" data-testid="movs-saldo">El pantallazo dice <b class="mono">${full(FMOV.saldo)}</b> · la app (después de guardar) dirá <b class="mono">${full(app + ent - sal)}</b>${Math.abs(app + ent - sal - FMOV.saldo) > 1 ? ' · si no cuadra, al guardar te ofrezco cuadrarlo' : ' ✅'}</div>` : '';
+  const filas = L0.map((m, i) => {
+    const amt = m.dir === 'in' ? `<span class="pos">+${full(m.monto)}</span>` : m.dir === 'out' ? `<span class="neg">−${full(m.monto)}</span>` : `<span class="yel">${full(m.monto)}</span>`;
+    const opts = fotoMovsOpts(m).map(([k, l]) => `<option value="${esc(k)}"${k === fotoMovsVal(m) ? ' selected' : ''}>${esc(l)}</option>`).join('');
+    return `<div class="mvrow${m.accion === 'ignorar' ? ' off' : ''}" data-testid="movs-row" data-i="${i}">
+      <div class="mvh"><div class="mvd">${esc(m.desc)}</div><div class="mono">${amt}</div></div>
+      <div class="mvm">${fdE(m.fecha)}${m.ya ? ` · <span class="yel">ya está (${esc(m.ya)})</span>` : m.porQue ? ` · ${esc(m.porQue)}` : ''}</div>
+      <select class="in mvsel" data-movs="${i}" data-testid="movs-sel" aria-label="Qué fue">${opts}</select></div>`;
+  }).join('');
+  const body = `<div class="lbl" style="margin-bottom:6px">¿De qué bolsillo es?</div><div class="seg" style="margin-bottom:10px">${segs}</div>
+    ${saldoH}
+    <p class="hint" style="margin-bottom:10px" data-testid="movs-resumen">Encontré <b>${L0.length}</b> movimiento${L0.length === 1 ? '' : 's'}${ya ? ` · <b>${ya}</b> ya estaba${ya === 1 ? '' : 'n'} registrado${ya === 1 ? '' : 's'}` : ''}. Revisa y corrige lo que haga falta: lo que quede “por clasificar” lo terminas en Inicio con un toque.</p>
+    ${filas}`;
+  const n = nuevos.length;
+  openInfo({kind: 'movs'}, '📸 Movimientos del pantallazo', body,
+    `<button type="button" class="btn b-gh" data-a="movsCancel">Cancelar</button>
+     <button type="button" class="btn b-g" data-a="movsSave" data-testid="movs-save"${n ? '' : ' disabled'}>Guardar ${n}</button>`);
+}
+function fotoMovsSet(i, val){
+  const m = FMOV && FMOV.lista[i];
+  if(!m) return;
+  const [k, x] = String(val).split(':');
+  m.accion = k; m.ya = '';
+  if(k === 'gasto'){ m.cat = x; m.tipo = NEG_CATS.includes(x) ? 'negocio' : 'personal'; }
+  if(k === 'abono') m.cobroId = x;
+  renderFotoMovs();
+}
+function saveFotoMovs(){
+  if(!FMOV) return;
+  const before = {}; COLS.forEach(c => { before[c] = (DB[c] || []).map(r => Object.assign({}, r)); });
+  const b = FMOV.bolsillo, cuenta = {gasto: 0, ingreso: 0, abono: 0, pend: 0, retiro: 0};
+  const efectivo = pockets().find(p => p.id === 'efectivo');
+  FMOV.lista.forEach(m => {
+    const desc = clean(m.desc2 || m.quien || m.desc) || (m.dir === 'in' ? 'Entrada' : 'Gasto');
+    switch(m.accion){
+      case 'gasto': put('gastos', {desc, valor: m.monto, cat: m.cat || 'Otro', tipo: m.tipo || (NEG_CATS.includes(m.cat) ? 'negocio' : 'personal'), bolsillo: b, fecha: m.fecha}); break;
+      case 'ingreso': put('ingresos', {desc, valor: m.monto, bolsillo: b, fecha: m.fecha}); break;
+      case 'abono': if(get('cobros', m.cobroId)) put('abonos', {cobroId: m.cobroId, monto: m.monto, bolsillo: b, fecha: m.fecha}); else return; break;
+      case 'retiro': if(efectivo && b !== 'efectivo') put('transfers', {from: b, to: 'efectivo', monto: m.monto, fecha: m.fecha}); else { put('pend', {raw: m.raw, monto: m.monto, dir: 'out', quien: m.quien, fecha: m.fecha, bolsillo: b, t: Date.now()}); cuenta.pend++; return; } break;
+      case 'pend': put('pend', {raw: m.raw, monto: m.monto, dir: m.dir, quien: m.quien || m.desc, fecha: m.fecha, bolsillo: b, t: Date.now()}); break;
+      default: return;
+    }
+    cuenta[m.accion]++;
+  });
+  const saldo = FMOV.saldo;
+  FMOV = null; closeInfo();
+  const partes = [['gasto', 'gasto'], ['ingreso', 'ingreso'], ['abono', 'abono'], ['retiro', 'retiro'], ['pend', 'por clasificar']].filter(([k]) => cuenta[k]).map(([k, l]) => cuenta[k] + ' ' + (k === 'pend' ? l : cuenta[k] === 1 ? l : l + 's'));
+  commit('📸 Guardé ' + (partes.join(' · ') || 'nada'), {undo: undoFrom(before), ms: 7000});
+  const real = balances(DB)[b] || 0;
+  if(saldo != null && Math.abs(real - saldo) > 1) setTimeout(() => openForm('ajuste', {bolsillo: b, real: String(saldo)}), 600);
+}
+Object.assign(ACT, {
+  movsFoto: () => ocrPick('movs'),
+  movsBol: el => { if(FMOV){ FMOV.bolsillo = el.dataset.id; renderFotoMovs(); } },
+  movsSave: () => saveFotoMovs(),
+  movsCancel: () => { FMOV = null; closeInfo(); }
+});
+
 /* ═════════ 5. AJUSTES, RESPALDO Y BIENVENIDA ═════════ */
 function renderAjustes(){
   const u = $('#cfgUrl'), k = $('#cfgKey');
@@ -2759,8 +2938,12 @@ function bindEvents(){
   /* registro rápido */
   $('#qForm').addEventListener('submit', e => { e.preventDefault(); runQuick($('#qInput').value); });
   $('#qMic').addEventListener('click', e => { e.preventDefault(); startVoice(); });
+  document.addEventListener('change', e => { const el = e.target; if(el && el.dataset && el.dataset.movs != null) fotoMovsSet(+el.dataset.movs, el.value); });
   $('#qInput').addEventListener('paste', e => {
-    const txt = (e.clipboardData || window.clipboardData || {getData: () => ''}).getData('text') || '';
+    const cd = e.clipboardData || window.clipboardData || {getData: () => ''};
+    const img = Array.from(cd.files || []).filter(f => /^image\//.test(f.type));
+    if(img.length && typeof leerImagenes === 'function'){ e.preventDefault(); OCR = {mode: 'movs'}; ocrRun(img); return; }
+    const txt = cd.getData('text') || '';
     if(/\n/.test(txt.trim()) && parseLista(txt, quickCtx()).items.length >= 2){ e.preventDefault(); openLista(txt); }
   });
 
@@ -2864,8 +3047,8 @@ function init(){
 
   let qs;
   try { qs = new URLSearchParams(location.search); } catch(e){ qs = new URLSearchParams(''); }
-  const v0 = qs.get('v'), voz = qs.get('voz') === '1';
-  if(v0 || voz){ try { history.replaceState(null, '', location.pathname); } catch(e){} }
+  const v0 = qs.get('v'), voz = qs.get('voz') === '1', noti = qs.get('noti') || '', bolQ = qs.get('bol') || '', qDirect = qs.get('q') || '';
+  if(v0 || voz || noti || qDirect){ try { history.replaceState(null, '', location.pathname); } catch(e){} }
   setView(VIEWS.includes(v0) ? v0 : 'inicio');
   registerSW();
 
@@ -2877,7 +3060,10 @@ function init(){
       first.then(() => { afterSync(); if(!CFG.onboarded && UI.onb === 'wait') showOnb('ask'); });
     } else showOnb('ask');
   }
-  if(voz && !UI.onb) setTimeout(() => { const q = $('#qInput'); if(q) q.focus(); startVoice(); }, 250);
+  if(!UI.onb){
+    if(qDirect) setTimeout(() => { const q = $('#qInput'); if(q) q.value = qDirect; runQuick(qDirect); }, 250);
+    else if(voz || noti) setTimeout(() => openVoz({noti, bol: bolQ}), 250);
+  }
 }
 
 init();
