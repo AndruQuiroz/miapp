@@ -194,6 +194,21 @@ button.card{width:100%;font:inherit;color:inherit}
 .qbar.pensando{opacity:.75}
 .qbar.pensando #qGo{animation:vozp 1s ease-in-out infinite}
 .linkbtn{background:none;border:none;padding:0;color:var(--B,#4aa3ff);text-decoration:underline;font:inherit;cursor:pointer}
+.hbtn{min-width:44px;min-height:44px;border-radius:14px;border:1px solid var(--line,rgba(127,127,127,.25));background:transparent;font-size:20px;margin-right:8px;cursor:pointer}
+.asis-log{display:flex;flex-direction:column;gap:8px}
+.amsg{padding:10px 12px;border-radius:14px;max-width:92%;line-height:1.4;font-size:15px}
+.amsg.yo{align-self:flex-end;background:var(--G,#0bb877);color:#04130c}
+.amsg.app{align-self:flex-start;background:rgba(127,127,127,.12)}
+.amsg.err{border:1px solid var(--R,#e5484d)}
+.amsg.ok{border:1px solid var(--G,#0bb877)}
+.amsg.pensando{opacity:.75;animation:vozp 1.2s ease-in-out infinite}
+.asis-ej{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.asis-ej .chip{min-height:44px;padding:6px 12px;border-radius:12px;border:1px dashed var(--line,rgba(127,127,127,.35));background:transparent;color:inherit;font:inherit;font-size:14px;text-align:left;cursor:pointer}
+.asis-prop{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.asis-c{display:flex;gap:8px;align-items:flex-start;padding:8px;border-radius:10px;background:rgba(127,127,127,.08);min-height:44px}
+.asis-c input{width:22px;height:22px;flex:none;margin-top:1px}
+.asis-in{display:flex;gap:8px;width:100%;align-items:center}
+.asis-in .in{flex:1;min-width:0;font-size:16px}
 .voz-st{font-weight:600;margin-top:6px}
 .rend .rend-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;margin:10px 0 8px}
 .rend .val{font-family:var(--mono,monospace);font-size:22px;font-weight:700}
@@ -351,6 +366,7 @@ body:has(.wrap input:focus) .tabs{display:none}
   <div class="top-in">
     <div class="logo" aria-hidden="true">$</div>
     <div class="brand"><b>Mi App</b><small id="hdrDate"></small></div>
+    <button class="hbtn" data-a="asisAbrir" data-testid="asis-abrir" type="button" aria-label="Háblale a tu app">💬</button>
     <button class="sync s-off" id="syncBtn" data-testid="sync" type="button">Sin nube</button>
   </div>
 </header>
@@ -537,6 +553,7 @@ body:has(.wrap input:focus) .tabs{display:none}
 <script src="quick.js"></script>
 <script src="movs.js"></script>
 <script src="ia.js"></script>
+<script src="asistente.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

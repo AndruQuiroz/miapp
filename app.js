@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.9.0';
+const APP_VERSION = '3.0.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -2518,6 +2518,10 @@ function runQuick(text){
   text = clean(text);
   const q = $('#qInput');
   if(!text){ toast('Escribe algo como “almuerzo 18 mil”'); if(q) q.focus(); return; }
+  if(esComando(text)){                                            // "borra…", "¿cuánto…?", "está mal…" → el asistente
+    if(iaOn()){ if(q){ q.value = ''; q.blur(); } return openAsis(text); }
+    if(/\?\s*$|^(cu[aá]nto|qu[eé]\s|c[oó]mo\s|cu[aá]l)/i.test(text)){ toast('Para preguntarle cosas a la app prende la IA en Más → Ajustes', {ms: 5000}); return; }
+  }
   let arr = null;
   try { arr = parseQuickMulti(text, quickCtx()); } catch(e){ console.error(e); }
   arr = (arr || []).filter(r => r && FORMS[r.kind]);
@@ -2872,6 +2876,127 @@ Object.assign(ACT, {
   movsCancel: () => { FMOV = null; closeInfo(); }
 });
 
+
+/* ═════════ ASISTENTE "💬 Háblale a tu app" (asistente.js) ═════════
+   La IA solo pide datos y PROPONE; la app busca, calcula, valida y aplica con tu OK (y Deshacer). */
+const AS_CMD = /^(borra|borrar|elimina|eliminar|quita|quitar|corrige|corregir|cambia|cambiar|edita|editar|arregla|arreglar|cuadra|cuadrar|deshaz|revisa|busca|muestra|muestrame|muéstrame|dime|cu[aá]nto|cu[aá]ntos|cu[aá]ntas|qu[eé]\s|c[oó]mo\s|cu[aá]l|en qu[eé]|por qu[eé]|est[aá] mal|est[aá]n mal)\b/i;
+const esComando = t => AS_CMD.test(String(t).trim()) || /\?\s*$|\b(est[aá]n? mal|no cuenta|no cuentan|repetid|duplicad)/i.test(t);
+let ASIS = null;   // {msgs:[{yo|app html}], historial:[{yo, app}], vistos:Set, busy}
+function asisCtx(){ return {hoy: today(), bolsillos: pockets().map(p => ({id: p.id, nombre: p.nombre}))}; }
+function openAsis(pedido){
+  if(!ASIS) ASIS = {msgs: [], historial: [], vistos: new Set(), busy: false, props: {}};
+  renderAsis();
+  if(pedido) asisEnviar(pedido);
+  else setTimeout(() => { const t = $('#asisTxt'); if(t) t.focus(); }, 60);
+}
+function asisHola(){
+  if(!iaOn()) return `<div class="amsg app">Para hablarle a tu app necesito la IA prendida.<br><button type="button" class="btn b-b" style="margin-top:8px" data-a="asisAjustes">🧠 Prenderla en Ajustes</button></div>`;
+  if(ASIS && ASIS.msgs.length) return '';
+  return `<div class="amsg app">Pídeme lo que quieras de tus cuentas. Yo busco, te muestro exactamente qué voy a cambiar y tú decides.<div class="asis-ej">${
+    ['¿Cuánto gasté en gasolina este mes?', 'Borra los gastos repetidos de esta semana', 'La venta del 13 fue en 1.7, no en 1.6', '¿Cómo voy este mes?', 'Tengo 2.180.000 en Nequi, cuádralo']
+      .map(t => `<button type="button" class="chip" data-a="asisEj" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div></div>`;
+}
+function renderAsis(){
+  if(!ASIS) return;
+  const log = ASIS.msgs.map(m => m.html).join('') + (ASIS.busy ? `<div class="amsg app pensando" data-testid="asis-pensando">🧠 Revisando tus cuentas…</div>` : '');
+  const body = `<div class="asis-log" id="asisLog" data-testid="asis-log">${asisHola()}${log}</div>`;
+  const foot = `<div class="asis-in" id="asisForm"><input class="in" id="asisTxt" data-testid="asis-txt" lang="es-CO" placeholder="Ej: borra el gasto repetido del D1" enterkeyhint="send"${iaOn() ? '' : ' disabled'}>
+    <button type="button" class="qbtn" id="asisMic" data-a="asisMic" aria-label="Hablar"${iaOn() ? '' : ' disabled'}>🎤</button>
+    <button type="submit" class="qbtn go" data-testid="asis-go" aria-label="Enviar"${iaOn() && !ASIS.busy ? '' : ' disabled'}>➤</button></div>`;
+  const keep = $('#asisTxt') ? $('#asisTxt').value : '';
+  openInfo({kind: 'asis'}, '💬 Háblale a tu app', body, foot);
+  const t = $('#asisTxt'); if(t && keep) t.value = keep;
+  const lg = $('#asisLog'); if(lg){ const sb = $('#sheetBody'); if(sb) sb.scrollTop = sb.scrollHeight; }
+}
+async function asisEnviar(texto){
+  texto = clean(texto);
+  if(!texto || !ASIS || ASIS.busy) return;
+  if(!iaOn()){ renderAsis(); return; }
+  ASIS.msgs.push({html: `<div class="amsg yo">${esc(texto)}</div>`});
+  ASIS.busy = true; const t = $('#asisTxt'); if(t) t.value = '';
+  renderAsis();
+  let r = null, err = '';
+  try {
+    r = await asistente(texto, DB, asisCtx(), {historial: ASIS.historial, vistos: ASIS.vistos,
+      llamar: (sys, usr) => iaPost(sys, usr, {key: CFG.iaKey, modelo: CFG.iaModelo, timeout: 20000}, 1500).then(x => { if(x.modelo && x.modelo !== CFG.iaModelo){ CFG.iaModelo = x.modelo; saveCfg(); } return x.texto; })});
+  } catch(e){ err = String(e && e.message || e); }
+  if(!ASIS) return;
+  ASIS.busy = false;
+  if(!r){
+    const m = {cuota: 'Se acabó la cuota gratis de la IA por ahora. Intenta en un rato.', clave: 'La clave de la IA no sirve: revísala en Ajustes.', lento: 'La IA tardó demasiado. Intenta otra vez.', red: 'Sin conexión: revisa tu internet.'}[err] || 'No pude hacerlo (' + esc(err) + ').';
+    ASIS.msgs.push({html: `<div class="amsg app err">${m}</div>`});
+    return renderAsis();
+  }
+  const id = 'p' + Date.now().toString(36);
+  let h = `<div class="amsg app" data-testid="asis-resp">`;
+  if(r.respuesta) h += `<div>${esc(r.respuesta)}</div>`;
+  if(r.pregunta) h += `<div style="margin-top:6px"><b>${esc(r.pregunta)}</b></div>`;
+  if(r.cambios.length){
+    ASIS.props[id] = r.cambios;
+    h += `<div class="asis-prop" data-testid="asis-prop">${r.cambios.map((c, i) => `<label class="asis-c"><input type="checkbox" checked data-prop="${id}" data-i="${i}"> <span>${esc(c.texto)}</span></label>`).join('')}
+      <div class="pbtns" style="margin-top:8px"><button type="button" class="btn b-gh" data-a="asisNo" data-id="${id}">Cancelar</button>
+      <button type="button" class="btn b-g" data-a="asisSi" data-id="${id}" data-testid="asis-aplicar">Aplicar ${r.cambios.length}</button></div></div>`;
+  }
+  if(r.crear && r.crear.length) h += `<div class="pbtns" style="margin-top:8px">${r.crear.map(f => `<button type="button" class="btn b-b" data-a="asisCrear" data-t="${esc(f)}">➕ ${esc(f)}</button>`).join('')}</div>`;
+  if(r.rechazados.length) h += `<div class="hint" style="margin-top:6px">No hice ${plural(r.rechazados.length, 'cosa', 'cosas')} que no pude verificar.</div>`;
+  if(r.pasos.length) h += `<details class="hint" style="margin-top:6px"><summary>Datos que revisé (${r.pasos.length})</summary>${r.pasos.map(p => `<div class="mono" style="font-size:11px;word-break:break-word">${esc(p.fn)} ${esc(JSON.stringify(p.args))}</div>`).join('')}</details>`;
+  h += '</div>';
+  ASIS.msgs.push({html: h});
+  ASIS.historial.push({yo: texto, app: (r.respuesta || '') + (r.pregunta ? ' ' + r.pregunta : '') + (r.cambios.length ? ' [propuse: ' + r.cambios.map(c => c.texto).join('; ') + ']' : '')});
+  renderAsis();
+}
+function asisAplicar(id){
+  const cs = ASIS && ASIS.props[id];
+  if(!cs) return;
+  const marcados = new Set($$(`[data-prop="${id}"]`).filter(x => x.checked).map(x => +x.dataset.i));
+  const elegidos = cs.filter((c, i) => marcados.has(i));
+  if(!elegidos.length) return toast('No marcaste ningún cambio');
+  const before = {}; COLS.forEach(c => { before[c] = (DB[c] || []).map(r => Object.assign({}, r)); });
+  let n = 0;
+  elegidos.forEach(c => {
+    if(c.accion === 'cuadrar'){ put('ajustes', {bolsillo: c.bolsillo, delta: c.delta, fecha: today(), nota: 'Cuadre ' + pn(c.bolsillo) + ' (asistente)'}); n++; return; }
+    const r = get(c.col, c.id);
+    if(!r) return;
+    if(c.accion === 'borrar'){
+      if(c.col === 'cobros') removeCobro(r.id);
+      else if(c.col === 'items'){ remove('items', r.id); L(DB, 'cobros').filter(x => x.itemId === r.id).forEach(x => removeCobro(x.id)); }
+      else remove(c.col, r.id);
+      n++;
+    } else if(c.accion === 'editar'){
+      const o = Object.assign({}, r, c.campos);
+      if(c.col === 'items' && c.campos.sellPrice != null && (r.sellPaid == null || +r.sellPaid === +r.sellPrice)) o.sellPaid = c.campos.sellPrice;
+      put(c.col, o); n++;
+    }
+  });
+  delete ASIS.props[id];
+  ASIS.msgs.push({html: `<div class="amsg app ok">✅ Listo: ${plural(n, 'cambio aplicado', 'cambios aplicados')}. Si algo quedó mal, toca Deshacer.</div>`});
+  ASIS.historial.push({yo: '(aplicó los cambios)', app: 'aplicados ' + n});
+  commit('✅ ' + plural(n, 'cambio', 'cambios') + ' del asistente', {undo: undoFrom(before), ms: 8000});
+  renderAsis();
+}
+function asisMic(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition, t = $('#asisTxt'), mic = $('#asisMic');
+  if(!SR || navigator.onLine === false){ toast('Usa el micrófono del teclado 🎤'); if(t) t.focus(); return; }
+  let rec; try { rec = new SR(); } catch(e){ if(t) t.focus(); return; }
+  rec.lang = 'es-CO'; rec.interimResults = true; rec.continuous = false;
+  rec.onstart = () => { if(mic) mic.classList.add('rec'); };
+  rec.onresult = e => { let x = ''; for(let i = 0; i < e.results.length; i++) x += e.results[i][0].transcript; if(t) t.value = x; const last = e.results[e.results.length - 1]; if(last && last.isFinal && x.trim()) setTimeout(() => asisEnviar(x), 500); };
+  rec.onerror = () => { if(t) t.focus(); };
+  rec.onend = () => { if(mic) mic.classList.remove('rec'); };
+  try { rec.start(); } catch(e){}
+}
+Object.assign(ACT, {
+  asisAbrir: () => openAsis(),
+  asisEj: el => asisEnviar(el.dataset.t),
+  asisSi: el => asisAplicar(el.dataset.id),
+  asisNo: el => { if(ASIS){ delete ASIS.props[el.dataset.id]; ASIS.msgs.push({html: '<div class="amsg app">Listo, no cambié nada.</div>'}); ASIS.historial.push({yo: '(canceló)', app: 'no se cambió nada'}); renderAsis(); } },
+  asisCrear: el => { const f = el.dataset.t; closeInfo(); const q = $('#qInput'); if(q) q.value = f; setTimeout(() => quickOpenDirect(f), 200); },
+  asisMic: () => asisMic(),
+  asisAjustes: () => { closeInfo(); setView('mas'); const b = $('#masSeg [data-seg="ajustes"]'); if(b) b.click(); setTimeout(() => { const x = $('#cfgIa'); if(x) x.scrollIntoView({block: 'center'}); }, 300); }
+});
+/* abre una frase en el registro normal (sin desviarla al asistente) */
+function quickOpenDirect(f){ let arr = null; try { arr = parseQuickMulti(f, quickCtx()); } catch(e){} arr = (arr || []).filter(r => r && FORMS[r.kind]); if(iaOn() && typeof iaLlamar === 'function') return iaQuick(f, arr); quickOpen(f, arr); }
+
 /* ═════════ 5. AJUSTES, RESPALDO Y BIENVENIDA ═════════ */
 function renderAjustes(){
   const u = $('#cfgUrl'), k = $('#cfgKey');
@@ -3158,7 +3283,11 @@ function bindEvents(){
     const el = e.target;
     if(el && el.matches && el.matches('input,select,textarea')) setTimeout(() => { try { el.scrollIntoView({block: 'center', behavior: 'smooth'}); } catch(_){} }, 300);
   });
-  $('#sheetForm').addEventListener('submit', e => { e.preventDefault(); if(SHEET === 'lote') saveLote(); else saveForm(); });
+  $('#sheetForm').addEventListener('submit', e => {
+    e.preventDefault();
+    if(SHEET === 'info' && INFO && INFO.kind === 'asis'){ const x = $('#asisTxt'); if(x && clean(x.value)) asisEnviar(x.value); return; }
+    if(SHEET === 'lote') saveLote(); else saveForm();
+  });
   $('#sheetX').addEventListener('click', closeSheet);
   $('#sheet').addEventListener('click', e => { if(e.target === e.currentTarget) closeSheet(); });
   window.addEventListener('popstate', () => { if(F && F.lote != null) closeForm(); else closeSheet(); });
