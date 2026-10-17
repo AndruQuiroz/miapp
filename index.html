@@ -190,6 +190,9 @@ button.card{width:100%;font:inherit;color:inherit}
 .mvd{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mvm{font-size:12px;opacity:.75;margin:2px 0 6px}
 .mvsel{width:100%;padding:8px}
+.qbar.pensando{opacity:.75}
+.qbar.pensando #qGo{animation:vozp 1s ease-in-out infinite}
+.linkbtn{background:none;border:none;padding:0;color:var(--B,#4aa3ff);text-decoration:underline;font:inherit;cursor:pointer}
 .voz-st{font-weight:600;margin-top:6px}
 .rend .rend-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;margin:10px 0 8px}
 .rend .val{font-family:var(--mono,monospace);font-size:22px;font-weight:700}
@@ -487,6 +490,11 @@ body:has(.wrap input:focus) .tabs{display:none}
         <p class="hint" style="margin-top:8px">Manda “Enviaste $1.000 a PRUEBA” a tu nube y lo trae a <b>Por clasificar</b>. Si aparece, la captura de Nequi va a funcionar.</p>
       </div>
 
+      <div class="sec" id="secIA">
+        <div class="sec-h"><span class="sec-t">🧠 IA para entenderte mejor</span></div>
+        <div id="iaBody" data-testid="ia"></div>
+      </div>
+
       <div class="sec" id="secAprendido">
         <div class="sec-h"><span class="sec-t">🧠 Lo que he aprendido</span></div>
         <div id="aprBody" data-testid="aprendido"></div>
@@ -527,6 +535,7 @@ body:has(.wrap input:focus) .tabs{display:none}
 <script src="ocr.js"></script>
 <script src="quick.js"></script>
 <script src="movs.js"></script>
+<script src="ia.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

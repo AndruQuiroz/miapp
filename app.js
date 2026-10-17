@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.7.0';
+const APP_VERSION = '2.8.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -1254,6 +1254,7 @@ function saveForm(){
     const r = learnFrom({kind, v: F.v, v0: F.v0, parsed: F.parsed, qtext: F.qtext, fondoTouched: !!F.touched.fondo});
     if(r && msg) msg += ' · 🧠 aprendí “' + r.palabra + '”';
   }
+  if(fromQuick && F.qtext && res.rec) iaRecordar(F.qtext, [{kind, d: res.rec}]);
   if(d._pend){
     const p = get('pend', d._pend);
     if(p){ learnRule(p, kind, res.rec || {}); remove('pend', p.id); }
@@ -2368,6 +2369,7 @@ function saveLote(){
   }
   if(LOTE.fromQuick) LOTE.ops.forEach(op => learnFrom({kind: op.kind, v: formValues(op.kind, op.d), v0: op.v0, parsed: op.parsed, qtext: LOTE.qtext,
     fondoTouched: !!op.d.fondo && op.d.fondo !== op.parsed.d.fondo}));          // §12.3 también en el lote
+  if(LOTE.fromQuick) iaRecordar(LOTE.qtext, LOTE.ops.map(op => ({kind: op.kind, d: op.d})));
   const undo = undoFrom(before);
   if(LOTE.fromQuick){ const q = $('#qInput'); if(q) q.value = ''; }
   closeLote();
@@ -2517,12 +2519,103 @@ function runQuick(text){
   let arr = null;
   try { arr = parseQuickMulti(text, quickCtx()); } catch(e){ console.error(e); }
   arr = (arr || []).filter(r => r && FORMS[r.kind]);
+  if(iaOn() && navigator.onLine !== false && typeof iaLlamar === 'function') return iaQuick(text, arr);
+  quickOpen(text, arr);
+}
+function quickOpen(text, arr, o){
+  o = o || {};
+  const q = $('#qInput');
   if(!arr.length) arr = [{kind: 'gasto', d: {}}];
   if(q) q.blur();
   arr = arr.map(r => ({kind: r.kind, d: Object.assign({}, r.d || {})}));
   if(arr.length === 1 && !arr[0].d.tradeIn) openForm(arr[0].kind, Object.assign({}, arr[0].d), {fromQuick: true, parsed: JSON.parse(JSON.stringify(arr[0])), qtext: text});
   else startLote(arr, {fromQuick: true, qtext: text});           // §11.4: varias operaciones → hoja "Esto entendí"
+  if(o.duda) toast('🧠 ' + o.duda, {ms: 6000});
 }
+
+/* ═════════ IA opcional (ia.js): Gemini con el contexto del negocio; lo local es el respaldo ═════════ */
+const K_IAEJ = 'miapp_ia_ej';
+const iaOn = () => !!(CFG && CFG.iaKey && CFG.ia !== false);
+const iaEjemplos = () => { const e = loadJSON(K_IAEJ); return Array.isArray(e) ? e : []; };
+/* cada frase que confirmas queda como ejemplo de cómo hablas (solo en este celular, máx. 25) */
+function iaRecordar(texto, ops){
+  if(!texto || typeof iaSimple !== 'function') return;
+  try {
+    const simple = ops.map(op => { const x = iaSimple(op); delete x.ref; delete x.fecha; delete x.fondo; return x; }).filter(x => x.kind);
+    if(!simple.length) return;
+    const ej = iaEjemplos().filter(e => e.t !== texto);
+    ej.push({t: String(texto).slice(0, 200), ops: simple});
+    saveJSON(K_IAEJ, ej.slice(-(typeof IA_MAX_EJ !== 'undefined' ? IA_MAX_EJ : 25)));
+  } catch(e){}
+}
+const iaCtx = () => {
+  const c = quickCtx();
+  const st = new Map(stockItems().map(i => [i.id, i])), cp = new Map(cobrosPend(DB).map(x => [x.id, x]));
+  c.stock.forEach(x => { const i = st.get(x.id); if(i) x.buyPrice = i.buyPrice; });
+  c.cobros.forEach(x => { const k = cp.get(x.id); if(k) x.pend = k.pend; });
+  c.contactos = L(DB, 'contactos').map(x => ({nombre: x.nombre}));
+  return c;
+};
+const IA_AVISO = {cuota: '🧠 Se acabó la IA gratis por ahora: usé el lector normal', clave: '🧠 La clave de la IA no sirve: revísala en Más → Ajustes', lento: '🧠 La IA tardó mucho: usé el lector normal',
+  modelo: '🧠 No encontré un modelo de IA disponible: usé el lector normal', red: ''};
+const IA_AVISADO = {};
+function iaAviso(err){
+  const k = Object.keys(IA_AVISO).find(x => String(err).indexOf(x) === 0) || '';
+  const m = k ? IA_AVISO[k] : '🧠 La IA falló (' + err + '): usé el lector normal';
+  if(!m || (IA_AVISADO[k] && Date.now() - IA_AVISADO[k] < 600000)) return;
+  IA_AVISADO[k] = Date.now(); toast(m, {err: k === 'clave', ms: 5000});
+}
+let IA_BUSY = false;
+async function iaQuick(text, local){
+  if(IA_BUSY) return;
+  const f = $('#qForm'), go = $('#qGo'), q = $('#qInput');
+  IA_BUSY = true; if(f) f.classList.add('pensando'); if(go) go.textContent = '🧠'; if(q) q.blur();
+  let ops = null, err = '';
+  try {
+    const r = await iaLlamar(text, iaCtx(), {key: CFG.iaKey, modelo: CFG.iaModelo, ejemplos: iaEjemplos(), pista: local, hoy: today()});
+    ops = r.ops;
+    if(r.modelo && r.modelo !== CFG.iaModelo){ CFG.iaModelo = r.modelo; saveCfg(); }
+  } catch(e){ err = String(e && e.message || e); }
+  IA_BUSY = false; if(f) f.classList.remove('pensando'); if(go) go.textContent = '➤';
+  const ok = (ops || []).filter(r => r && FORMS[r.kind]);
+  if(!ok.length){ if(err) iaAviso(err); return quickOpen(text, local); }
+  quickOpen(text, ok, {duda: ops.duda});
+}
+async function iaProbar(){
+  const k = clean(($('#cfgIa') || {}).value || '');
+  if(!k) return toast('Pega primero tu clave de IA', {err: true});
+  const b = $('#iaTest'); if(b){ b.disabled = true; b.textContent = '🧠 Probando…'; }
+  try {
+    const r = await iaLlamar('vendí el trece pro en uno seis a camilo por neki y almuerzo 18', iaCtx(), {key: k, hoy: today()});
+    const ok = r.ops && r.ops.length;
+    toast(ok ? '✅ La IA funciona (' + r.modelo + '): entendió ' + r.ops.map(o => o.kind).join(' + ') : 'La IA respondió algo raro, intenta otra vez', {err: !ok, ms: 6000});
+    if(ok){ CFG.iaKey = k; CFG.ia = true; CFG.iaModelo = r.modelo; saveCfg(); renderIA(); }
+  } catch(e){
+    const m = String(e && e.message || e);
+    if(m === 'cuota'){ CFG.iaKey = k; CFG.ia = true; saveCfg(); renderIA(); }
+    toast(m === 'clave' ? 'Esa clave no funciona: cópiala otra vez de Google AI Studio' : m === 'cuota' ? 'La clave sirve pero la cuota gratis está agotada por ahora' : m === 'red' ? 'Sin conexión con Google: revisa tu internet' : 'No pude probar la IA: ' + m, {err: true, ms: 6000});
+  }
+  if(b){ b.disabled = false; b.textContent = '🧪 Probar y guardar'; }
+}
+function renderIA(){
+  const el = $('#iaBody');
+  if(!el) return;
+  const n = iaEjemplos().length, on = iaOn();
+  el.innerHTML = `<p class="hint" style="margin-bottom:10px">Con la IA de Google (gratis) la app entiende mejor lo que dictas: corrige errores del dictado, la jerga y frases largas. Revisa con tu stock, tus bolsillos y quién te debe, y aprende de las frases que confirmas. Igual siempre te muestra lo que entendió antes de guardar.</p>
+    <div class="fld"><label for="cfgIa">Clave de Gemini (Google AI Studio)</label>
+      <input class="in" id="cfgIa" data-testid="cfg-ia" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…" value="${esc(CFG.iaKey || '')}"></div>
+    <div class="pbtns" style="margin-bottom:8px"><button type="button" class="btn b-b" id="iaTest" data-a="iaProbar" data-testid="ia-test">🧪 Probar y guardar</button>
+      ${CFG.iaKey ? `<button type="button" class="btn b-gh" data-a="iaToggle" data-testid="ia-toggle">${on ? '⏸️ Apagar' : '▶️ Prender'}</button>` : ''}${n ? `<button type="button" class="btn b-gh" data-a="iaOlvidar">Borrar ejemplos</button>` : ''}</div>
+    <p class="hint" data-testid="ia-estado">${CFG.iaKey ? (on ? '🟢 Prendida' + (CFG.iaModelo ? ' · ' + esc(CFG.iaModelo) : '') : '⚪ Apagada: uso solo el lector normal') : '⚪ Sin clave'} · ${n} frase${n === 1 ? '' : 's'} tuya${n === 1 ? '' : 's'} de ejemplo</p>
+    <details style="margin-top:8px"><summary class="hint">¿Cómo saco la clave? (2 minutos, gratis)</summary><ol class="hint" style="margin:8px 0 0 18px">
+      <li>Entra a <b>aistudio.google.com/apikey</b> con tu cuenta de Google.</li><li>Toca <b>Create API key</b> (Crear clave) y cópiala.</li><li>Pégala arriba y toca <b>Probar y guardar</b>.</li></ol>
+      <p class="hint" style="margin-top:8px">La clave queda solo en este celular. A Google se manda la frase y un resumen (nombres de bolsillos, modelos del stock, nombres de quien te debe); no tus saldos. En la capa gratis Google puede usar lo que le mandes para mejorar sus productos.</p></details>`;
+}
+Object.assign(ACT, {
+  iaProbar: () => iaProbar(),
+  iaToggle: () => { CFG.ia = !iaOn(); saveCfg(); renderIA(); toast(CFG.ia ? '🧠 IA prendida' : 'IA apagada: uso el lector normal'); },
+  iaOlvidar: () => { saveJSON(K_IAEJ, []); renderIA(); toast('Listo, borré las frases de ejemplo'); }
+});
 
 let REC = null;
 function startVoice(){
@@ -2752,6 +2845,7 @@ function renderAjustes(){
   $('#cfgTest').disabled = !hasCloud();
   $('#cfgSync').disabled = !hasCloud();
   renderAprendido();
+  if(document.activeElement !== $('#cfgIa')) renderIA();
   $('#appVer').textContent = APP_VERSION;
   $('#appCount').textContent = String(COLS.reduce((a, c) => a + L(DB, c).length, 0));
 }
