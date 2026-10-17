@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '2.8.0';
+const APP_VERSION = '2.9.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -333,6 +333,7 @@ function renderInicio(){
   const pend = L(DB, 'pend').sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')) || (+b.u || 0) - (+a.u || 0));
   if(pend.length){
     h += `<div class="sec-h" style="margin-top:4px"><span class="sec-t">📲 Por clasificar</span><span class="pend-n">${pend.length}</span></div>`;
+    if(pend.length >= 2) h += `<button type="button" class="btn b-g full" style="margin:0 0 12px" data-a="pendTodos" data-testid="pend-todos">${iaOn() ? '🧠' : '⚡'} Clasificar los ${pend.length} de una vez</button>`;
     const max = UI.pendAll ? 40 : 3;
     h += pend.slice(0, max).map(pendCard).join('');
     if(pend.length > max) h += `<button type="button" class="btn b-gh full" style="margin:-2px 0 12px" data-a="pendAll">Ver ${UI.pendAll ? 'más' : 'los ' + pend.length} por clasificar ▾</button>`;
@@ -415,8 +416,9 @@ function renderInicio(){
 const PEND_OUT = [['compra', '🛒 Compra'], ['gastoN', '🏢 Gasto negocio'], ['gastoP', '👤 Gasto personal'], ['transferOut', '🔁 Retiro/mover'], ['prestamo', '🤝 Préstamo']];
 const PEND_IN = [['venta', '💰 Venta'], ['abono', '💸 Abono'], ['ingreso', '➕ Ingreso'], ['transferIn', '🔁 Mover']];
 
+const quienKey = q => normKey(typeof mvSinBasura === 'function' ? mvSinBasura(q) : q);
 function ruleFor(p){
-  const k = normKey(p.quien);
+  const k = quienKey(p.quien);
   if(!k) return null;                                   // §10.4: sin quien no hay regla
   const r = L(DB, 'reglas').find(x => x.id === k);
   if(!r) return null;
@@ -436,7 +438,7 @@ function pendCard(p){
   const btns = dir === 'in' ? PEND_IN : dir === 'out' ? PEND_OUT : PEND_OUT.concat(PEND_IN);
   const r = ruleFor(p), id = esc(p.id);
   return `<div class="alert" data-testid="pend" data-id="${id}" style="--ac:${dir === 'in' ? 'var(--G)' : dir === 'out' ? 'var(--R)' : 'var(--Y)'}">
-    <div class="alert-h"><div style="min-width:0"><div class="alert-t">${esc(p.quien || 'Sin nombre')}</div>
+    <div class="alert-h"><div style="min-width:0"><div class="alert-t">${esc((typeof mvSinBasura === 'function' ? mvSinBasura(p.quien) : p.quien) || 'Sin nombre')}</div>
       <div class="meta">${fdE(p.fecha)} · ${esc(pn(p.bolsillo || 'nequi'))}${dir === '?' ? ' · <span class="yel">¿entró o salió?</span>' : ''}</div></div>
       <div class="alert-m">${amt}</div></div>
     ${p.raw ? `<div class="raw">${esc(p.raw)}</div>` : ''}
@@ -1268,7 +1270,7 @@ function saveForm(){
 /* Regla aprendida: quien → cómo se clasificó (solo gasto/ingreso/transfer y con quien no vacío, §10.4) */
 function learnRule(p, kind, rec){
   if(!['gasto', 'ingreso', 'transfer'].includes(kind)) return;
-  const k = normKey(p.quien);
+  const k = quienKey(p.quien);
   if(!k) return;
   put('reglas', {id: k, kind, desc: rec.desc || '', cat: rec.cat || '', tipo: rec.tipo || '', from: rec.from || '', to: rec.to || ''});
 }
@@ -2554,6 +2556,7 @@ const iaCtx = () => {
   c.stock.forEach(x => { const i = st.get(x.id); if(i) x.buyPrice = i.buyPrice; });
   c.cobros.forEach(x => { const k = cp.get(x.id); if(k) x.pend = k.pend; });
   c.contactos = L(DB, 'contactos').map(x => ({nombre: x.nombre}));
+  c.reglasNombre = L(DB, 'reglas').filter(r => r.kind !== 'quick');
   return c;
 };
 const IA_AVISO = {cuota: '🧠 Se acabó la IA gratis por ahora: usé el lector normal', clave: '🧠 La clave de la IA no sirve: revísala en Más → Ajustes', lento: '🧠 La IA tardó mucho: usé el lector normal',
@@ -2727,8 +2730,8 @@ Object.assign(ACT, {
 
 
 /* ═════════ PANTALLAZO DE MOVIMIENTOS → todos los gastos y entradas de una (movs.js) ═════════ */
-let FMOV = null;   // {lista, bolsillo, saldo}
-const MV_ACC = [['pend', '📲 Por clasificar (luego)'], ['ingreso', '➕ Ingreso (no es venta)'], ['retiro', '🔁 Retiro a efectivo'], ['ignorar', '🚫 No registrar']];
+let FMOV = null;   // {lista, bolsillo, saldo, origen: 'foto'|'pend'}
+const MV_ACC = [['pend', '📲 Por clasificar (luego)'], ['ingreso', '➕ Ingreso (no es venta)'], ['ignorar', '🚫 No registrar']];
 function fotoMovsBolsillo(texto){
   const t = normKey(texto), ps = pockets();
   const banco = ps.find(p => p.id !== 'nequi' && p.id !== 'efectivo' && normKey(p.nombre).length > 3 && t.includes(normKey(p.nombre)) && !/nequi/.test(t));
@@ -2742,77 +2745,129 @@ function openFotoMovs(texto, r){
     return;
   }
   const bolsillo = fotoMovsBolsillo(texto);
-  FMOV = {bolsillo, saldo: movs.saldo, texto, lista: clasificarMovs(DB, movs, {bolsillo})};
+  fotoMovsMostrar(clasificarMovs(DB, movs, {bolsillo}), {bolsillo, saldo: movs.saldo, origen: 'foto'});
+}
+/* "Por clasificar" completo → la misma hoja de revisión (cada uno con su bolsillo) */
+function openPendTodos(){
+  const pend = L(DB, 'pend');
+  if(!pend.length) return;
+  const grupos = {};
+  pend.forEach(p => { const b = p.bolsillo || 'nequi'; (grupos[b] = grupos[b] || []).push(p); });
+  let lista = [];
+  Object.keys(grupos).forEach(b => {
+    const movs = grupos[b].map(p => ({pendId: p.id, raw: p.raw || '', fecha: p.fecha || today(), desc: mvSinBasura(p.quien || p.raw || 'Movimiento'), quien: mvSinBasura(p.quien || ''), monto: +p.monto || 0, dir: p.dir || '?'}));
+    lista = lista.concat(clasificarMovs(DB, movs, {bolsillo: b}));
+  });
+  lista.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  fotoMovsMostrar(lista, {origen: 'pend'});
+}
+/* la app ya decidió; si hay IA, ella revisa lo dudoso antes de mostrarlo */
+async function fotoMovsMostrar(lista, o){
+  FMOV = Object.assign({lista, bolsillo: o.bolsillo || '', saldo: o.saldo, origen: o.origen}, {});
+  const dudosos = lista.filter(m => !m.ya && (m.accion === 'pend' || m.accion === 'gasto' && m.cat === 'Otro')).length;
+  if(iaOn() && navigator.onLine !== false && typeof iaRevisarMovs === 'function' && dudosos){
+    openInfo({kind: 'movs'}, '🧠 Revisando…', `<p class="hint" data-testid="movs-ia-espera">La app ya organizó ${plural(lista.length, 'movimiento')}. La IA está revisando ${plural(dudosos, 'que quedó dudoso', 'que quedaron dudosos')}…</p><div class="bar"><i style="width:60%"></i></div>`,
+      '<button type="button" class="btn b-gh" disabled>Revisando…</button>');
+    const yo = FMOV;
+    try {
+      const r = await iaRevisarMovs(lista, iaCtx(), {key: CFG.iaKey, modelo: CFG.iaModelo, ejemplos: iaEjemplos(), hoy: today(), timeout: 15000});
+      if(FMOV !== yo) return;
+      if(r && r.lista){ FMOV.lista = r.lista; FMOV.iaCambios = r.lista.cambios || 0; }
+    } catch(e){ if(FMOV !== yo) return; iaAviso(String(e && e.message || e)); }
+  }
   renderFotoMovs();
 }
 function fotoMovsOpts(m){
-  const o = [];
+  const o = [], b = m.bolsillo || FMOV.bolsillo;
   if(m.dir !== 'in') GCATS.forEach(c => o.push(['gasto:' + c, '💸 Gasto · ' + c]));
   if(m.dir !== 'out') cobrosPend(DB).forEach(c => o.push(['abono:' + c.id, '💵 Abono de ' + c.nombre + ' (debe ' + fmt(c.pend) + ')']));
-  MV_ACC.forEach(([k, l]) => { if(k === 'retiro' && m.dir === 'in') return; if(k === 'ingreso' && m.dir === 'out') return; o.push([k, l]); });
+  pockets().filter(p => p.id !== b).forEach(p => {
+    if(m.dir !== 'in') o.push(['mover:' + p.id, '🔁 Lo pasé a ' + p.nombre]);
+    if(m.dir !== 'out') o.push(['mover:' + p.id, '🔁 Vino de ' + p.nombre]);
+  });
+  MV_ACC.forEach(([k, l]) => { if(k === 'ingreso' && m.dir === 'out') return; o.push([k, k === 'ignorar' && FMOV.origen === 'pend' ? '🚫 Ignorar (no es nada / ya está)' : l]); });
   return o;
 }
-const fotoMovsVal = m => m.accion === 'gasto' ? 'gasto:' + (m.cat || 'Otro') : m.accion === 'abono' ? 'abono:' + m.cobroId : m.accion;
+const fotoMovsVal = m => m.accion === 'gasto' ? 'gasto:' + (m.cat || 'Otro') : m.accion === 'abono' ? 'abono:' + m.cobroId : m.accion === 'mover' ? 'mover:' + m.otro : m.accion;
 function renderFotoMovs(){
   if(!FMOV) return;
-  const L0 = FMOV.lista, nuevos = L0.filter(m => m.accion !== 'ignorar'), ya = L0.length - nuevos.length;
-  const ent = sum(nuevos.filter(m => m.dir === 'in'), 'monto'), sal = sum(nuevos.filter(m => m.dir !== 'in'), 'monto');
-  const segs = pockets().map(p => `<button type="button" class="${p.id === FMOV.bolsillo ? 'on' : ''}" data-a="movsBol" data-id="${esc(p.id)}">${esc(p.nombre)}</button>`).join('');
-  const app = balances(DB)[FMOV.bolsillo] || 0;
-  const saldoH = FMOV.saldo != null ? `<div class="hint" style="margin:-2px 0 10px" data-testid="movs-saldo">El pantallazo dice <b class="mono">${full(FMOV.saldo)}</b> · la app (después de guardar) dirá <b class="mono">${full(app + ent - sal)}</b>${Math.abs(app + ent - sal - FMOV.saldo) > 1 ? ' · si no cuadra, al guardar te ofrezco cuadrarlo' : ' ✅'}</div>` : '';
+  const L0 = FMOV.lista, pendO = FMOV.origen === 'pend';
+  const hace = L0.filter(m => m.accion !== 'pend' && !(m.accion === 'ignorar' && !pendO));
+  const ya = L0.filter(m => m.ya).length, quedan = L0.filter(m => m.accion === 'pend').length;
+  let top = '';
+  if(!pendO){
+    const cuenta = L0.filter(m => ['gasto', 'ingreso', 'abono', 'mover'].includes(m.accion));   // "por clasificar" todavía no mueve saldos
+    const ent = sum(cuenta.filter(m => m.dir === 'in'), 'monto'), sal = sum(cuenta.filter(m => m.dir !== 'in'), 'monto');
+    const segs = pockets().map(p => `<button type="button" class="${p.id === FMOV.bolsillo ? 'on' : ''}" data-a="movsBol" data-id="${esc(p.id)}">${esc(p.nombre)}</button>`).join('');
+    const app = balances(DB)[FMOV.bolsillo] || 0;
+    top = `<div class="lbl" style="margin-bottom:6px">¿De qué bolsillo es?</div><div class="seg" style="margin-bottom:10px">${segs}</div>` +
+      (FMOV.saldo != null ? `<div class="hint" style="margin:-2px 0 10px" data-testid="movs-saldo">El pantallazo dice <b class="mono">${full(FMOV.saldo)}</b> · la app (después de guardar) dirá <b class="mono">${full(app + ent - sal)}</b>${Math.abs(app + ent - sal - FMOV.saldo) > 1 ? ' · si no cuadra, al guardar te ofrezco cuadrarlo' : ' ✅'}</div>` : '');
+  }
+  const res = pendO
+    ? `Tienes <b>${L0.length}</b> por clasificar. Ya dejé listos <b>${hace.length}</b>${ya ? ` (${ya} ya estaba${ya === 1 ? '' : 'n'} registrado${ya === 1 ? '' : 's'}: se quitan)` : ''}${quedan ? ` · <b>${quedan}</b> necesita${quedan === 1 ? '' : 'n'} que me digas qué fue${quedan === 1 ? '' : 'ron'}` : ''}.`
+    : `Encontré <b>${L0.length}</b> movimiento${L0.length === 1 ? '' : 's'}${ya ? ` · <b>${ya}</b> ya estaba${ya === 1 ? '' : 'n'} registrado${ya === 1 ? '' : 's'}` : ''}.`;
   const filas = L0.map((m, i) => {
     const amt = m.dir === 'in' ? `<span class="pos">+${full(m.monto)}</span>` : m.dir === 'out' ? `<span class="neg">−${full(m.monto)}</span>` : `<span class="yel">${full(m.monto)}</span>`;
     const opts = fotoMovsOpts(m).map(([k, l]) => `<option value="${esc(k)}"${k === fotoMovsVal(m) ? ' selected' : ''}>${esc(l)}</option>`).join('');
-    return `<div class="mvrow${m.accion === 'ignorar' ? ' off' : ''}" data-testid="movs-row" data-i="${i}">
-      <div class="mvh"><div class="mvd">${esc(m.desc)}</div><div class="mono">${amt}</div></div>
-      <div class="mvm">${fdE(m.fecha)}${m.ya ? ` · <span class="yel">ya está (${esc(m.ya)})</span>` : m.porQue ? ` · ${esc(m.porQue)}` : ''}</div>
+    return `<div class="mvrow${m.accion === 'ignorar' ? ' off' : ''}${m.accion === 'pend' ? ' duda' : ''}" data-testid="movs-row" data-i="${i}">
+      <div class="mvh"><div class="mvd">${esc(m.desc2 && m.desc2 !== m.desc ? m.desc2 : m.desc)}</div><div class="mono">${amt}</div></div>
+      <div class="mvm">${fdE(m.fecha)}${pendO ? ' · ' + esc(pn(m.bolsillo)) : ''}${m.ya ? ` · <span class="yel">ya está (${esc(m.ya)})</span>` : m.porQue ? ` · ${esc(m.porQue)}` : ''}</div>
       <select class="in mvsel" data-movs="${i}" data-testid="movs-sel" aria-label="Qué fue">${opts}</select></div>`;
   }).join('');
-  const body = `<div class="lbl" style="margin-bottom:6px">¿De qué bolsillo es?</div><div class="seg" style="margin-bottom:10px">${segs}</div>
-    ${saldoH}
-    <p class="hint" style="margin-bottom:10px" data-testid="movs-resumen">Encontré <b>${L0.length}</b> movimiento${L0.length === 1 ? '' : 's'}${ya ? ` · <b>${ya}</b> ya estaba${ya === 1 ? '' : 'n'} registrado${ya === 1 ? '' : 's'}` : ''}. Revisa y corrige lo que haga falta: lo que quede “por clasificar” lo terminas en Inicio con un toque.</p>
-    ${filas}`;
-  const n = nuevos.length;
-  openInfo({kind: 'movs'}, '📸 Movimientos del pantallazo', body,
+  const iaTxt = FMOV.iaCambios ? `<p class="hint" style="margin-bottom:10px" data-testid="movs-ia">🧠 La IA revisó y corrigió ${plural(FMOV.iaCambios, 'movimiento')} (marcados con 🧠).</p>` : '';
+  const body = `${top}<p class="hint" style="margin-bottom:10px" data-testid="movs-resumen">${res} Revisa y cambia lo que haga falta.${quedan ? ' Lo que siga “por clasificar” lo terminas después con los botones de siempre.' : ''}</p>${iaTxt}${filas}`;
+  const n = pendO ? L0.filter(m => m.accion !== 'pend').length : L0.filter(m => m.accion !== 'ignorar').length;
+  openInfo({kind: 'movs'}, pendO ? '⚡ Clasificar todos' : '📸 Movimientos del pantallazo', body,
     `<button type="button" class="btn b-gh" data-a="movsCancel">Cancelar</button>
-     <button type="button" class="btn b-g" data-a="movsSave" data-testid="movs-save"${n ? '' : ' disabled'}>Guardar ${n}</button>`);
+     <button type="button" class="btn b-g" data-a="movsSave" data-testid="movs-save"${n ? '' : ' disabled'}>${pendO ? 'Aplicar ' : 'Guardar '}${n}</button>`);
 }
 function fotoMovsSet(i, val){
   const m = FMOV && FMOV.lista[i];
   if(!m) return;
   const [k, x] = String(val).split(':');
-  m.accion = k; m.ya = '';
+  m.accion = k; m.ya = ''; m.ia = false; m.tocado = true;
   if(k === 'gasto'){ m.cat = x; m.tipo = NEG_CATS.includes(x) ? 'negocio' : 'personal'; }
   if(k === 'abono') m.cobroId = x;
+  if(k === 'mover') m.otro = x;
   renderFotoMovs();
 }
 function saveFotoMovs(){
   if(!FMOV) return;
   const before = {}; COLS.forEach(c => { before[c] = (DB[c] || []).map(r => Object.assign({}, r)); });
-  const b = FMOV.bolsillo, cuenta = {gasto: 0, ingreso: 0, abono: 0, pend: 0, retiro: 0};
-  const efectivo = pockets().find(p => p.id === 'efectivo');
+  const cuenta = {gasto: 0, ingreso: 0, abono: 0, pend: 0, mover: 0, ignorar: 0}, pendO = FMOV.origen === 'pend';
   FMOV.lista.forEach(m => {
+    const b = m.bolsillo || FMOV.bolsillo;
     const desc = clean(m.desc2 || m.quien || m.desc) || (m.dir === 'in' ? 'Entrada' : 'Gasto');
+    let rec = null;
     switch(m.accion){
-      case 'gasto': put('gastos', {desc, valor: m.monto, cat: m.cat || 'Otro', tipo: m.tipo || (NEG_CATS.includes(m.cat) ? 'negocio' : 'personal'), bolsillo: b, fecha: m.fecha}); break;
-      case 'ingreso': put('ingresos', {desc, valor: m.monto, bolsillo: b, fecha: m.fecha}); break;
-      case 'abono': if(get('cobros', m.cobroId)) put('abonos', {cobroId: m.cobroId, monto: m.monto, bolsillo: b, fecha: m.fecha}); else return; break;
-      case 'retiro': if(efectivo && b !== 'efectivo') put('transfers', {from: b, to: 'efectivo', monto: m.monto, fecha: m.fecha}); else { put('pend', {raw: m.raw, monto: m.monto, dir: 'out', quien: m.quien, fecha: m.fecha, bolsillo: b, t: Date.now()}); cuenta.pend++; return; } break;
-      case 'pend': put('pend', {raw: m.raw, monto: m.monto, dir: m.dir, quien: m.quien || m.desc, fecha: m.fecha, bolsillo: b, t: Date.now()}); break;
+      case 'gasto': rec = put('gastos', {desc, valor: m.monto, cat: m.cat || 'Otro', tipo: m.tipo || (NEG_CATS.includes(m.cat) ? 'negocio' : 'personal'), bolsillo: b, fecha: m.fecha}); break;
+      case 'ingreso': rec = put('ingresos', {desc, valor: m.monto, bolsillo: b, fecha: m.fecha}); break;
+      case 'abono': if(!get('cobros', m.cobroId)) return; rec = put('abonos', {cobroId: m.cobroId, monto: m.monto, bolsillo: b, fecha: m.fecha}); break;
+      case 'mover': if(!m.otro || m.otro === b) return; rec = put('transfers', m.dir === 'in' ? {from: m.otro, to: b, monto: m.monto, fecha: m.fecha} : {from: b, to: m.otro, monto: m.monto, fecha: m.fecha}); break;
+      case 'pend': if(m.pendId) return; put('pend', {raw: m.raw, monto: m.monto, dir: m.dir, quien: m.quien || m.desc, fecha: m.fecha, bolsillo: b, t: Date.now()}); break;
+      case 'ignorar': if(!m.pendId) return; break;
       default: return;
+    }
+    if(m.pendId) remove('pend', m.pendId);
+    // aprende el nombre → la próxima vez sale solo ("como la vez pasada")
+    const k = normKey(m.quien);
+    if(rec && k && k.split(' ').length <= 6 && !/^(pago|compra|envio|retiro|recarga|transferencia)$/.test(k)){
+      if(m.accion === 'gasto' || m.accion === 'ingreso') put('reglas', {id: k, kind: m.accion, desc: rec.desc || '', cat: rec.cat || '', tipo: rec.tipo || '', from: '', to: ''});
+      if(m.accion === 'mover') put('reglas', {id: k, kind: 'transfer', desc: '', cat: '', tipo: '', from: rec.from, to: rec.to});
     }
     cuenta[m.accion]++;
   });
-  const saldo = FMOV.saldo;
+  const saldo = FMOV.saldo, bol = FMOV.bolsillo;
   FMOV = null; closeInfo();
-  const partes = [['gasto', 'gasto'], ['ingreso', 'ingreso'], ['abono', 'abono'], ['retiro', 'retiro'], ['pend', 'por clasificar']].filter(([k]) => cuenta[k]).map(([k, l]) => cuenta[k] + ' ' + (k === 'pend' ? l : cuenta[k] === 1 ? l : l + 's'));
-  commit('📸 Guardé ' + (partes.join(' · ') || 'nada'), {undo: undoFrom(before), ms: 7000});
-  const real = balances(DB)[b] || 0;
-  if(saldo != null && Math.abs(real - saldo) > 1) setTimeout(() => openForm('ajuste', {bolsillo: b, real: String(saldo)}), 600);
+  const partes = [['gasto', 'gasto'], ['ingreso', 'ingreso'], ['abono', 'abono'], ['mover', 'movimiento entre bolsillos'], ['ignorar', 'ignorado'], ['pend', 'por clasificar']]
+    .filter(([k]) => cuenta[k]).map(([k, l]) => cuenta[k] + ' ' + (k === 'pend' || cuenta[k] === 1 ? l : l.replace(/^(\w+)/, '$1s')));
+  commit((pendO ? '⚡ Listo: ' : '📸 Guardé ') + (partes.join(' · ') || 'nada'), {undo: undoFrom(before), ms: 7000});
+  if(!pendO && saldo != null && Math.abs((balances(DB)[bol] || 0) - saldo) > 1) setTimeout(() => openForm('ajuste', {bolsillo: bol, real: String(saldo)}), 600);
 }
 Object.assign(ACT, {
   movsFoto: () => ocrPick('movs'),
-  movsBol: el => { if(FMOV){ FMOV.bolsillo = el.dataset.id; renderFotoMovs(); } },
+  pendTodos: () => openPendTodos(),
+  movsBol: el => { if(FMOV){ FMOV.bolsillo = el.dataset.id; FMOV.lista.forEach(m => { m.bolsillo = el.dataset.id; if(m.accion === 'mover' && m.otro === el.dataset.id) m.accion = 'pend'; }); renderFotoMovs(); } },
   movsSave: () => saveFotoMovs(),
   movsCancel: () => { FMOV = null; closeInfo(); }
 });

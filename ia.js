@@ -21,7 +21,8 @@ function iaContexto(ctx){
   const deben = (ctx.cobros || []).slice(0, 40).map(c => ({id: c.id, nombre: c.nombre, debe: c.pend != null ? c.pend : undefined}));
   const fondos = (ctx.fondos || []).filter(f => !f.del && !/^(negocio|personal)$/.test(f.id)).map(f => ({id: f.id, nombre: f.nombre}));
   const contactos = (ctx.contactos || []).slice(0, 40).map(c => c.nombre).filter(Boolean);
-  return {bolsillos: bol, stock, te_deben: deben, apartados: fondos.length ? fondos : undefined, contactos: contactos.length ? contactos : undefined};
+  const apr = (ctx.reglasNombre || []).slice(0, 60).map(r => ({nombre: r.id, es: r.kind === 'transfer' ? 'mover ' + (r.from || '') + '→' + (r.to || '') : r.kind + (r.cat ? '/' + r.cat : '')}));
+  return {bolsillos: bol, stock, te_deben: deben, apartados: fondos.length ? fondos : undefined, contactos: contactos.length ? contactos : undefined, ya_aprendido: apr.length ? apr : undefined};
 }
 
 /* parseQuickMulti → formato simple (el mismo vocabulario que le pedimos a la IA) */
@@ -159,15 +160,12 @@ function iaToOps(resp, ctx){
   return ops;
 }
 
-/* fetch a Gemini con respaldo de modelo (los nombres cambian seguido) y límite de tiempo */
-async function iaLlamar(texto, ctx, o){
-  o = o || {};
-  if(!o.key) throw new Error('sin-clave');
-  const {sys, usr} = iaPrompt(texto, ctx, o.ejemplos, o.pista, o.hoy);
+/* POST a Gemini con respaldo de modelo (los nombres cambian seguido) y límite de tiempo */
+async function iaPost(sys, usr, o, maxTok){
   const body = JSON.stringify({
     systemInstruction: {parts: [{text: sys}]},
     contents: [{role: 'user', parts: [{text: usr}]}],
-    generationConfig: {temperature: 0, responseMimeType: 'application/json', maxOutputTokens: 1200}
+    generationConfig: {temperature: 0, responseMimeType: 'application/json', maxOutputTokens: maxTok || 1200}
   });
   const modelos = o.modelo ? [o.modelo].concat(IA_MODELOS.filter(m => m !== o.modelo)) : IA_MODELOS;
   let ultimo = null;
@@ -189,9 +187,81 @@ async function iaLlamar(texto, ctx, o){
     if(!r.ok) throw new Error('http ' + r.status);
     const j = await r.json();
     const txt = (((j.candidates || [])[0] || {}).content || {parts: []}).parts.map(p => p.text || '').join('');
-    return {modelo: m, texto: txt, ops: iaToOps(txt, ctx)};
+    return {modelo: m, texto: txt};
   }
   throw new Error(ultimo || 'modelo');
 }
+async function iaLlamar(texto, ctx, o){
+  o = o || {};
+  if(!o.key) throw new Error('sin-clave');
+  const {sys, usr} = iaPrompt(texto, ctx, o.ejemplos, o.pista, o.hoy);
+  const r = await iaPost(sys, usr, o, 1200);
+  return {modelo: r.modelo, texto: r.texto, ops: iaToOps(r.texto, ctx)};
+}
 
 if(typeof module !== 'undefined') module.exports = {iaContexto, iaSimple, iaPrompt, iaToOps, iaLlamar, IA_MODELOS};
+
+/* ── Revisión con IA de una lista de movimientos (pantallazo o "Por clasificar") ──
+   La APP ya decidió (reglas, deudores, comercios, duplicados por monto y fecha); la IA revisa y mejora
+   lo dudoso. Los duplicados que la app marcó NO los toca (eso es matemático, no opinión). */
+const IA_ACC = ['gasto', 'ingreso', 'abono', 'mover', 'pend', 'ignorar'];
+function iaPromptMovs(lista, ctx, ejemplos, hoy){
+  const c = iaContexto(ctx);
+  const sys = `Eres el asistente contable de Andru (compra y venta de iPhones en Medellín, Colombia). Te paso movimientos de su Nequi/banco leídos de pantallazos. La app ya propuso qué es cada uno; tú revisas y corriges SOLO donde estés razonablemente seguro.
+
+Responde SOLO JSON: {"filas":[{"i": número, "accion": "...", "cat": "...", "tipo": "negocio|personal", "desc": "corto", "cobro": "id", "otro": "id bolsillo", "porque": "máx 6 palabras"}]}
+Devuelve una fila por cada movimiento que NO tenga "ya" (los que tienen "ya" son duplicados ya registrados: no los incluyas).
+
+accion:
+- "gasto": pagó algo (comercio, servicio, comida, gasolina, envío…). cat obligatoria: una de ${JSON.stringify(typeof GCATS !== 'undefined' ? GCATS : [])}. tipo "negocio" para envíos, empaques, comisiones, publicidad o arreglos de equipos; si no, "personal".
+- "ingreso": le entró plata que NO es venta ni pago de deuda (intereses, devolución, regalo, sueldo).
+- "abono": le pagó alguien de te_deben (cobro = su id). Solo si el nombre coincide de verdad.
+- "mover": plata entre SUS bolsillos (recarga desde su banco, retiro en cajero = a efectivo, envío al Nequi de su pareja si existe ese bolsillo). otro = id del otro bolsillo.
+- "pend": no se puede saber sin preguntarle (ej. envío grande a una persona = quizá compró un celular; entrada grande de una persona = quizá vendió uno). Mejor "pend" que adivinar.
+- "ignorar": no es plata real (rechazado, reverso que se anula con otro de la lista).
+Pistas: Distracom/Terpel/Primax = gasolina (Transporte). D1/Ara/Éxito = Comida. Si un nombre aparece en sus ejemplos o reglas, clasifícalo igual. Los nombres pueden traer basura del lector ("O) Juan") — ignórala. desc: nombre limpio del comercio o persona.
+
+CONTEXTO DE SU APP:
+${JSON.stringify(c)}${ejemplos && ejemplos.length ? '\nAsí ha clasificado él antes: ' + JSON.stringify(ejemplos.slice(-IA_MAX_EJ)) : ''}
+Hoy es ${hoy}.`;
+  const filas = lista.map((m, i) => ({i, fecha: m.fecha, desc: m.desc, monto: m.monto, dir: m.dir === 'in' ? 'entró' : m.dir === 'out' ? 'salió' : '¿?',
+    app: m.accion === 'gasto' ? 'gasto/' + m.cat : m.accion === 'mover' ? 'mover/' + m.otro : m.accion, ya: m.ya || undefined}));
+  return {sys, usr: 'MOVIMIENTOS:\n' + JSON.stringify(filas)};
+}
+/* aplica la revisión sobre la lista (copia); marca r.ia = true donde la IA cambió algo */
+function iaAplicarMovs(lista, resp, ctx){
+  let j = resp;
+  if(typeof j === 'string'){ const s = j.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim(); try { j = JSON.parse(s); } catch(e){ const m = s.match(/\{[\s\S]*\}/); try { j = m ? JSON.parse(m[0]) : null; } catch(e2){ j = null; } } }
+  const filas = j && Array.isArray(j.filas) ? j.filas : Array.isArray(j) ? j : null;
+  if(!filas) return null;
+  ctx = ctx || {};
+  const bols = new Set((ctx.bolsillos || []).filter(b => !b.del).map(b => b.id)), cobros = new Set((ctx.cobros || []).map(c => c.id));
+  const gc = typeof GCATS !== 'undefined' ? GCATS : [];
+  const out = lista.map(m => Object.assign({}, m));
+  let cambios = 0;
+  filas.forEach(f => {
+    const r = out[+f.i];
+    if(!r || r.ya || !IA_ACC.includes(f.accion)) return;
+    const antes = r.accion + '|' + (r.cat || '') + '|' + (r.otro || '') + '|' + (r.cobroId || '');
+    if(f.accion === 'gasto'){ if(r.dir === 'in') return; r.accion = 'gasto'; r.cat = gc.includes(f.cat) ? f.cat : (r.cat || 'Otro'); r.tipo = f.tipo === 'negocio' ? 'negocio' : 'personal'; }
+    else if(f.accion === 'ingreso'){ if(r.dir === 'out') return; r.accion = 'ingreso'; }
+    else if(f.accion === 'abono'){ if(r.dir === 'out' || !cobros.has(String(f.cobro))) return; r.accion = 'abono'; r.cobroId = String(f.cobro); }
+    else if(f.accion === 'mover'){ if(!bols.has(String(f.otro)) || String(f.otro) === r.bolsillo) return; r.accion = 'mover'; r.otro = String(f.otro); }
+    else r.accion = f.accion;
+    if(f.desc && typeof f.desc === 'string') r.desc2 = f.desc.trim().slice(0, 60);
+    const despues = r.accion + '|' + (r.cat || '') + '|' + (r.otro || '') + '|' + (r.cobroId || '');
+    if(antes !== despues){ r.ia = true; r.porQue = '🧠 ' + String(f.porque || 'la IA lo revisó').slice(0, 50); cambios++; }
+  });
+  out.cambios = cambios;
+  return out;
+}
+async function iaRevisarMovs(lista, ctx, o){
+  o = o || {};
+  if(!o.key) throw new Error('sin-clave');
+  const pendientes = lista.filter(m => !m.ya);
+  if(!pendientes.length) return {lista, modelo: ''};
+  const {sys, usr} = iaPromptMovs(lista, ctx, o.ejemplos, o.hoy);
+  const r = await iaPost(sys, usr, o, 2500);
+  return {modelo: r.modelo, lista: iaAplicarMovs(lista, r.texto, ctx)};
+}
+if(typeof module !== 'undefined') Object.assign(module.exports, {iaPromptMovs, iaAplicarMovs, iaRevisarMovs});
