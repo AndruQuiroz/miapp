@@ -131,9 +131,10 @@ public class MainActivity extends Activity {
     void despachar() {
         if (eventoPendiente == null || web == null) return;
         final String ev = eventoPendiente;
+        eventoPendiente = null;   // se entrega UNA vez; si la página aún no estaba lista, se reintenta cuando avise listo()
         web.evaluateJavascript("(function(){try{if(window.miappNativoEvento){miappNativoEvento(" + ev + ");return 'ok'}return 'no'}catch(e){return 'error: '+e}})()", r -> {
             Log.d("MiApp", "evento " + ev + " → " + r);
-            if ("\"ok\"".equals(r) && ev.equals(eventoPendiente)) eventoPendiente = null;
+            if ("\"no\"".equals(r) && eventoPendiente == null) eventoPendiente = ev;
         });
     }
 
