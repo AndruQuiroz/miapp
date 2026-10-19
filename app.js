@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '3.1.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -328,6 +328,10 @@ function renderInicio(){
   if(!hasCloud()) h += `<div class="alert" style="--ac:var(--B)"><div class="alert-h"><div><div class="alert-t">☁️ Conecta tu nube</div>
     <div class="meta">Respaldo automático en tu Google Sheet y captura de Nequi.</div></div>
     <button type="button" class="btn b-b" data-a="goAjustes">Conectar</button></div></div>`;
+
+  /* (a2) app de Android sin permiso de leer Nequi */
+  if(NATIVO){ const e = nativoEstado(); if(e.leerNotis === false) h += `<div class="alert" style="--ac:var(--Y)" data-testid="and-alerta"><div class="alert-h"><div><div class="alert-t">📲 Activa la lectura de Nequi</div>
+    <div class="meta">Un solo permiso y tus movimientos llegan solos.</div></div><button type="button" class="btn b-b" data-a="andAbrir" data-q="leerNotis">Activar</button></div></div>`; }
 
   /* (b) por clasificar */
   const pend = L(DB, 'pend').sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')) || (+b.u || 0) - (+a.u || 0));
@@ -2628,6 +2632,7 @@ let REC = null;
 function startVoice(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const q = $('#qInput'), mic = $('#qMic');
+  if(NATIVO){ if(UI.view !== 'inicio') setView('inicio'); return escucharNativo(t => { if(t){ q.value = t; runQuick(t); } }); }
   const gboard = () => { toast('Usa el micrófono del teclado (Gboard) 🎤', {ms: 4500}); if(q) q.focus(); };
   if(UI.view !== 'inicio') setView('inicio');
   if(REC){ try { REC.stop(); } catch(e){} return; }
@@ -2668,18 +2673,27 @@ function openVoz(o){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const body = ctx + `<div class="voz">
       <button type="button" class="voz-mic" id="vozMic" data-a="vozMic" data-testid="voz-mic" aria-label="Hablar">🎙️</button>
-      <div class="voz-st" id="vozSt">${SR ? 'Toca y cuéntame qué hiciste' : 'Escribe o usa el micrófono del teclado'}</div>
+      <div class="voz-st" id="vozSt">${SR || NATIVO ? 'Toca y cuéntame qué hiciste' : 'Escribe o usa el micrófono del teclado'}</div>
       <div class="hint" style="margin-top:2px">${n && n.monto ? 'Ej: “almuerzo”, “envío del 13”, “abono de Camilo”, “venta del 15 pro”' : 'Ej: “vendí el 13 en 1.6 nequi”, “almuerzo 18 mil”, “compré un 14 en 1.9”'}</div></div>
     <textarea class="in" id="vozTxt" data-testid="voz-texto" rows="3" placeholder="Lo que digas aparece aquí (puedes corregirlo)"></textarea>`;
   openInfo({kind: 'voz'}, n && n.monto ? '🎙️ ¿Qué fue esto?' : '🎙️ ¿Qué hiciste?', body,
     `<button type="button" class="btn b-gh" data-a="vozLuego" data-testid="voz-luego">${n && n.monto ? 'Luego' : 'Cancelar'}</button>
      <button type="button" class="btn b-g" data-a="vozOk" data-testid="voz-ok">Registrar</button>`);
-  if(SR && o.auto !== false) setTimeout(vozEscuchar, 350);
+  if((SR || NATIVO) && o.auto !== false) setTimeout(vozEscuchar, 350);
 }
 function vozEscuchar(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const st = $('#vozSt'), mic = $('#vozMic'), ta = $('#vozTxt');
   if(!VOZ || !mic) return;
+  if(NATIVO){
+    const base = ta ? ta.value.trim() : '';
+    if(st) st.textContent = 'Habla ahora…'; mic.classList.add('rec');
+    return escucharNativo(t => {
+      mic.classList.remove('rec');
+      if(t && ta){ ta.value = (base ? base + ' ' : '') + t; if(st) st.textContent = 'Listo'; setTimeout(() => { if(VOZ) vozRegistrar(); }, 700); }
+      else if(st) st.textContent = 'No te escuché. Toca 🎙️ otra vez';
+    });
+  }
   if(VREC){ try { VREC.stop(); } catch(e){} return; }
   if(!SR || navigator.onLine === false){ if(st) st.textContent = 'Sin dictado aquí: usa el micrófono del teclado 🎤'; if(ta) ta.focus(); return; }
   let rec; try { rec = new SR(); } catch(e){ if(ta) ta.focus(); return; }
@@ -2976,6 +2990,7 @@ function asisAplicar(id){
 }
 function asisMic(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition, t = $('#asisTxt'), mic = $('#asisMic');
+  if(NATIVO) return escucharNativo(x => { if(x) asisEnviar(x); });
   if(!SR || navigator.onLine === false){ toast('Usa el micrófono del teclado 🎤'); if(t) t.focus(); return; }
   let rec; try { rec = new SR(); } catch(e){ if(t) t.focus(); return; }
   rec.lang = 'es-CO'; rec.interimResults = true; rec.continuous = false;
@@ -2996,6 +3011,99 @@ Object.assign(ACT, {
 });
 /* abre una frase en el registro normal (sin desviarla al asistente) */
 function quickOpenDirect(f){ let arr = null; try { arr = parseQuickMulti(f, quickCtx()); } catch(e){} arr = (arr || []).filter(r => r && FORMS[r.kind]); if(iaOn() && typeof iaLlamar === 'function') return iaQuick(f, arr); quickOpen(f, arr); }
+
+
+/* ═════════ APP DE ANDROID (android/): puente con el teléfono ═════════
+   window.MiAppNativo existe solo dentro de la APK. Captura de Nequi, avisos, dictado, cortina. */
+const NATIVO = typeof window !== 'undefined' && !!window.MiAppNativo;
+const APK_URL = 'https://github.com/AndruQuiroz/miapp/releases/latest/download/MiApp.apk';
+function escucharNativo(onText){
+  const cb = '__voz' + Date.now().toString(36);
+  window[cb] = t => { try { delete window[cb]; } catch(e){ window[cb] = undefined; } onText(clean(t || '')); };
+  try { MiAppNativo.escuchar(cb); } catch(e){ onText(''); }
+}
+function nativoEstado(){ try { return JSON.parse(MiAppNativo.estado()); } catch(e){ return {}; } }
+function bolsilloDePkg(pkg, texto){
+  const t = normKey((pkg || '') + ' ' + (texto || '')), ps = pockets();
+  const banco = !/nequi/.test(t) && ps.find(p => !/nequi|efectivo/.test(p.id) && normKey(p.nombre).length > 3 && t.includes(normKey(p.nombre).split(' ')[0]));
+  return (banco || ps.find(p => p.id === 'nequi') || ps[0] || {id: ''}).id;
+}
+/* trae lo que el teléfono capturó de Nequi y lo deja en "Por clasificar" (sin repetir) */
+function miappNativoSync(){
+  if(!NATIVO || !DB) return 0;
+  let cola = [];
+  try { cola = JSON.parse(MiAppNativo.pendientes() || '[]'); } catch(e){ return 0; }
+  if(!cola.length) return 0;
+  const ids = [];
+  let n = 0;
+  cola.forEach(it => {
+    ids.push(it.id);
+    const raw = String(it.texto || '').trim(), t = +it.t || Date.now();
+    if(!raw) return;
+    const ya = L(DB, 'pend').some(p => p.nid === it.id || (p.raw === raw && Math.abs((+p.t || 0) - t) < 15 * 60000));
+    if(ya) return;
+    const x = parseNoti(raw);
+    if(!x || !x.monto) return;
+    const d = new Date(t);
+    put('pend', {raw, monto: x.monto, dir: x.dir || '?', quien: x.quien || '', fecha: ymd(d), bolsillo: bolsilloDePkg(it.pkg, raw), t, nid: it.id, src: 'app'});
+    n++;
+  });
+  try { MiAppNativo.confirmar(JSON.stringify(ids)); } catch(e){}
+  if(n){ console.log('[nativo] sync ' + n); commit(n === 1 ? '📲 Llegó 1 movimiento de Nequi' : '📲 Llegaron ' + n + ' movimientos de Nequi'); }
+  return n;
+}
+/* eventos que llegan del teléfono: notificación tocada, botón de la cortina */
+function miappNativoEvento(ev){
+  ev = ev || {};
+  miappNativoSync();
+  if(UI.onb) return;
+  if(ev.accion === 'voz'){
+    if(ev.noti){
+      const p = L(DB, 'pend').find(x => x.nid === ev.id || x.raw === ev.noti);
+      openVoz({noti: ev.noti, bol: p ? p.bolsillo : bolsilloDePkg('', ev.noti)});
+    } else openVoz({});
+  } else if(ev.accion === 'pend'){
+    setView('inicio');
+    if(L(DB, 'pend').length >= 2) openPendTodos();
+  } else setView('inicio');
+}
+/* botón "atrás" de Android: cierra la hoja abierta o vuelve a Inicio */
+function miappAtras(){
+  if(SHEET === 'form'){ closeForm(); return true; }
+  if(SHEET === 'lote'){ closeLote(); return true; }
+  if(SHEET){ closeInfo(); return true; }
+  if(UI.view !== 'inicio'){ setView('inicio'); return true; }
+  return false;
+}
+if(typeof window !== 'undefined'){ window.miappNativoSync = miappNativoSync; window.miappNativoEvento = miappNativoEvento; window.miappAtras = miappAtras; }
+
+/* Ajustes → 📱 App de Android */
+function renderAndroid(){
+  const el = $('#andBody');
+  if(!el) return;
+  if(!NATIVO){
+    el.innerHTML = `<p class="hint" style="margin-bottom:10px">Con la app instalada en tu Android, Mi App lee las notificaciones de Nequi sola, te pregunta “¿qué fue?” con un 🎙️ y tienes un botón en la cortina. Sin MacroDroid ni nada más.</p>
+      <a class="btn b-g full" href="${APK_URL}" data-testid="and-bajar" style="display:flex;justify-content:center;text-decoration:none">📲 Descargar la app (APK)</a>
+      <details style="margin-top:10px"><summary class="hint">¿Cómo paso mis datos a la app?</summary><ol class="hint" style="margin:8px 0 0 18px">
+        <li>Aquí abajo en <b>Respaldo</b> toca <b>Exportar</b> (se guarda en Descargas).</li><li>Instala la app y ábrela.</li>
+        <li>En la app: Más → Ajustes → Respaldo → <b>Importar</b> y elige ese archivo.</li></ol>
+        <p class="hint" style="margin-top:6px">Si tienes la nube conectada, en la app solo pega la misma URL y clave y se pasa todo solo.</p></details>`;
+    return;
+  }
+  const e = nativoEstado();
+  const fila = (ok, t, sub, que, btn, tid) => `<div class="kvline" data-testid="${tid}"><span style="min-width:0">${ok ? '✅' : '⚠️'} <b>${t}</b><br><small class="mut">${sub}</small></span>${ok && que !== 'autoinicio' ? '' : `<button type="button" class="btn ${ok ? 'b-gh' : 'b-b'}" data-a="andAbrir" data-q="${que}">${btn}</button>`}</div>`;
+  const xiaomi = /xiaomi|redmi|poco/i.test(e.marca || '');
+  el.innerHTML = fila(e.leerNotis, 'Leer notificaciones de Nequi', e.leerNotis ? 'Activo' + (e.capturas ? ' · ' + e.capturas + ' capturadas' : '') : 'Busca “Mi App” en la lista y actívalo', 'leerNotis', 'Activar', 'and-leer') +
+    fila(e.avisos, 'Avisos de “¿qué fue?”', e.avisos ? 'Activo' : 'Permite las notificaciones de Mi App', 'avisos', 'Permitir', 'and-avisos') +
+    fila(e.bateria, 'Batería sin restricciones', e.bateria ? 'Activo' : 'Para que el teléfono no la cierre', 'bateria', 'Abrir', 'and-bateria') +
+    (xiaomi ? fila(false, 'Inicio automático (Xiaomi/Poco)', 'Actívalo para Mi App: así sigue leyendo Nequi aunque la cierres', 'autoinicio', 'Abrir', 'and-auto') : '') +
+    `<div class="pbtns" style="margin-top:8px"><button type="button" class="btn b-b" data-a="andProbar" data-testid="and-probar">🧪 Probar captura</button></div>
+    <p class="hint" style="margin-top:8px">Botón en la cortina: baja la cortina → lápiz ✏️ (editar) → arrastra <b>Mi App 🎙️</b> arriba.<br>App ${esc(e.version || '')}</p>`;
+}
+Object.assign(ACT, {
+  andAbrir: el => { try { MiAppNativo.abrir(el.dataset.q); } catch(e){} },
+  andProbar: () => { try { MiAppNativo.probar(); toast('📲 Mandé un movimiento de prueba de $1.000: mira la notificación arriba', {ms: 5000}); setTimeout(() => miappNativoSync(), 1200); } catch(e){ toast('No pude probar', {err: true}); } }
+});
 
 /* ═════════ 5. AJUSTES, RESPALDO Y BIENVENIDA ═════════ */
 function renderAjustes(){
@@ -3026,6 +3134,7 @@ function renderAjustes(){
   $('#cfgSync').disabled = !hasCloud();
   renderAprendido();
   if(document.activeElement !== $('#cfgIa')) renderIA();
+  renderAndroid();
   $('#appVer').textContent = APP_VERSION;
   $('#appCount').textContent = String(COLS.reduce((a, c) => a + L(DB, c).length, 0));
 }
@@ -3108,6 +3217,10 @@ async function testCapture(){
 
 function exportJSON(){
   const name = 'miapp_' + today().replace(/-/g, '') + '.json';
+  if(NATIVO){
+    let ok = false; try { ok = MiAppNativo.guardarArchivo(name, JSON.stringify(DB)); } catch(e){}
+    return toast(ok ? '⬇️ Guardado en Descargas: ' + name : 'No pude guardar el respaldo', {err: !ok, ms: 5000});
+  }
   try {
     const blob = new Blob([JSON.stringify(DB)], {type: 'application/json'});
     const url = URL.createObjectURL(blob);
@@ -3337,6 +3450,11 @@ function init(){
       showOnb('wait');
       first.then(() => { afterSync(); if(!CFG.onboarded && UI.onb === 'wait') showOnb('ask'); });
     } else showOnb('ask');
+  }
+  if(NATIVO){
+    miappNativoSync();
+    document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ miappNativoSync(); if(UI.view === 'mas') render(); } });
+    setTimeout(() => { try { MiAppNativo.listo(); } catch(e){} }, 50);
   }
   if(!UI.onb){
     if(qDirect) setTimeout(() => { const q = $('#qInput'); if(q) q.value = qDirect; runQuick(qDirect); }, 250);
