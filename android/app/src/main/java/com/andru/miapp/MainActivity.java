@@ -98,8 +98,8 @@ public class MainActivity extends Activity {
         Avisos.canales(this);
         pedirPermisoNotis();
         eventoPendiente = eventoDe(getIntent());
-        if (saved != null) web.restoreState(saved);
-        else web.loadUrl(URL_APP);
+        Log.d("MiApp", "onCreate (recreada=" + (saved != null) + ")");
+        web.loadUrl(URL_APP);   // siempre carga la app: los datos viven en el almacenamiento de la página, no en el estado de la pantalla
     }
 
     String version() {
@@ -165,9 +165,15 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    protected void onSaveInstanceState(Bundle out) {
-        super.onSaveInstanceState(out);
-        if (web != null) web.saveState(out);
+    protected void onDestroy() {
+        Log.d("MiApp", "onDestroy");
+        if (web != null) {
+            web.removeJavascriptInterface("MiAppNativo");
+            web.loadUrl("about:blank");
+            web.destroy();
+            web = null;
+        }
+        super.onDestroy();
     }
 
     @Override

@@ -61,6 +61,18 @@ adb shell cmd statusbar click-tile $PKG/.VozTile || true
 sleep 6
 foto 6-tile
 info > $OUT/info-6.txt
+# girar la pantalla (Android recrea la ventana): la app debe seguir funcionando
+adb shell settings put system accelerometer_rotation 0
+adb shell settings put system user_rotation 1
+sleep 4
+adb shell settings put system user_rotation 0
+sleep 4
+adb shell "cmd notification post -S bigtext -t 'Nequi' prueba2 'Enviaste \$45.000 a TIENDA X'"
+sleep 4
+adb shell "am start -n $PKG/.MainActivity --es accion pend"
+sleep 6
+cdp "JSON.stringify(L(DB,'pend').map(p=>p.monto))" > $OUT/pend-final.json
+foto 7-final
 
 adb logcat -d -s MiApp:V > $OUT/logcat.txt
 adb logcat -d -b crash > $OUT/crash.txt

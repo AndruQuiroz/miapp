@@ -9,7 +9,9 @@ err = ''
 for intento in range(20):
     try:
         pages = json.load(urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=5))
-        page = next(p for p in pages if "miapp" in p.get("url", ""))
+        cands = [p for p in pages if "miapp" in p.get("url", "") and p.get("type") == "page"]
+        vis = [p for p in cands if '"visible":true' in p.get("description", "")]
+        page = (vis or cands)[0]
         break
     except Exception as e:
         err = repr(e); time.sleep(2)
