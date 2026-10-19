@@ -9,10 +9,14 @@ foto() { adb exec-out screencap -p > "$OUT/$1.png"; }
 adb install -r $OUT/MiApp.apk || { echo "INSTALAR_FALLO" > $OUT/resultado.txt; exit 1; }
 adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS
 adb shell cmd notification allow_listener $PKG/$PKG.NotiListener
-adb shell am start -n $PKG/.MainActivity
+adb logcat -c
+adb shell am start -W -n $PKG/.MainActivity
 sleep 30
 PID=$(adb shell pidof $PKG | tr -d '\r')
-adb forward tcp:9222 localabstract:webview_devtools_remote_$PID
+adb shell cat /proc/net/unix | grep -o 'webview_devtools_remote_[0-9]*' | sort -u > $OUT/sockets.txt
+SOCK=$(grep -o "webview_devtools_remote_$PID" $OUT/sockets.txt | head -1); [ -z "$SOCK" ] && SOCK=$(tail -1 $OUT/sockets.txt)
+adb forward tcp:9222 localabstract:$SOCK
+curl -s http://127.0.0.1:9222/json > $OUT/devtools.json
 foto 1-abre
 cdp "document.title + ' | nativo=' + (typeof MiAppNativo) + ' | ' + (window.MiAppNativo ? MiAppNativo.estado() : '')" > $OUT/estado.txt
 # saltar la bienvenida para ver la app
@@ -48,6 +52,8 @@ sleep 6
 foto 6-tile
 
 adb logcat -d -s MiApp:V > $OUT/logcat.txt
+adb logcat -d -b crash > $OUT/crash.txt
+adb logcat -d | grep -E "AndroidRuntime|ActivityManager.*$PKG|ActivityTaskManager.*$PKG|chromium" | tail -120 > $OUT/sistema.txt
 adb shell dumpsys notification --noredact | grep -B2 -A12 "pkg=$PKG" | head -120 > $OUT/notis.txt
 if grep -q 1600000 $OUT/pend.json; then echo "OK_CAPTURA" > $OUT/resultado.txt; else echo "FALLO_CAPTURA" > $OUT/resultado.txt; fi
 cat $OUT/resultado.txt $OUT/estado.txt $OUT/pend.json $OUT/hoja.txt

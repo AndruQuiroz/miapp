@@ -39,6 +39,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        WebView.setWebContentsDebuggingEnabled(true);
         web = new WebView(this);
         web.setBackgroundColor(Color.parseColor("#0B0F14"));
         setContentView(web);
@@ -50,7 +51,6 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setAllowFileAccess(false);
         s.setUserAgentString(s.getUserAgentString() + " MiAppAndroid/" + version());
-        WebView.setWebContentsDebuggingEnabled(true);
         web.addJavascriptInterface(new Puente(this), "MiAppNativo");
 
         web.setWebViewClient(new WebViewClient() {

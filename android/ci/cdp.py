@@ -3,15 +3,16 @@ import json, sys, time, urllib.request
 import websocket  # pip install websocket-client
 
 expr = sys.argv[1]
+err = ''
 for intento in range(20):
     try:
         pages = json.load(urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=5))
         page = next(p for p in pages if "miapp" in p.get("url", ""))
         break
     except Exception as e:
-        time.sleep(2)
+        err = repr(e); time.sleep(2)
 else:
-    print("SIN_PAGINA"); sys.exit(1)
+    print("SIN_PAGINA " + err); sys.exit(1)
 ws = websocket.create_connection(page["webSocketDebuggerUrl"], timeout=20, suppress_origin=True)
 ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": expr, "returnByValue": True, "awaitPromise": True}}))
 while True:
