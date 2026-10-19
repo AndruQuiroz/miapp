@@ -1,8 +1,10 @@
-"""Ejecuta JavaScript dentro del WebView de Mi App (Chrome DevTools Protocol vía adb forward)."""
-import json, sys, time, urllib.request
+"""Ejecuta JavaScript dentro del WebView de Mi App (Chrome DevTools Protocol vía adb forward).
+   python3 cdp.py "<expresión>"      → imprime el resultado
+   python3 cdp.py SHOT:archivo.png   → captura de la página por dentro (no depende del emulador)"""
+import base64, json, sys, time, urllib.request
 import websocket  # pip install websocket-client
 
-expr = sys.argv[1]
+arg = sys.argv[1]
 err = ''
 for intento in range(20):
     try:
@@ -13,11 +15,21 @@ for intento in range(20):
         err = repr(e); time.sleep(2)
 else:
     print("SIN_PAGINA " + err); sys.exit(1)
-ws = websocket.create_connection(page["webSocketDebuggerUrl"], timeout=20, suppress_origin=True)
-ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": expr, "returnByValue": True, "awaitPromise": True}}))
+ws = websocket.create_connection(page["webSocketDebuggerUrl"], timeout=30, suppress_origin=True)
+if arg.startswith("SHOT:"):
+    ws.send(json.dumps({"id": 1, "method": "Page.captureScreenshot", "params": {"format": "png"}}))
+else:
+    ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": arg, "returnByValue": True, "awaitPromise": True}}))
 while True:
     r = json.loads(ws.recv())
     if r.get("id") == 1:
-        v = r.get("result", {}).get("result", {})
-        print(v.get("value", v.get("description", json.dumps(r)[:500])))
+        if arg.startswith("SHOT:"):
+            d = r.get("result", {}).get("data")
+            if d: open(arg[5:], "wb").write(base64.b64decode(d)); print("ok")
+            else: print(json.dumps(r)[:300])
+        else:
+            res = r.get("result", {})
+            if "exceptionDetails" in res: print("EXCEPCION " + json.dumps(res["exceptionDetails"])[:800])
+            v = res.get("result", {})
+            print(v.get("value", v.get("description", json.dumps(r)[:500])))
         break
