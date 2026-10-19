@@ -43,6 +43,9 @@ sleep 8
 foto 4-pendientes
 cdp "JSON.stringify(L(DB,'pend').map(p=>({monto:p.monto,dir:p.dir,quien:p.quien,raw:p.raw})))" > $OUT/pend.json
 cdp "MiAppNativo.pendientes()" > $OUT/cola-nativa.json
+cdp "typeof miappNativoSync + ' ' + typeof miappNativoEvento + ' ' + APP_VERSION" > $OUT/funciones.txt
+cdp "String(miappNativoSync())" > $OUT/sync-directo.txt
+cdp "JSON.stringify(L(DB,'pend').map(p=>p.monto))" > $OUT/pend-despues.txt
 info > $OUT/info-4.txt
 
 # "🎙️ Contar" desde la notificación

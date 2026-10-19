@@ -131,7 +131,8 @@ public class MainActivity extends Activity {
     void despachar() {
         if (eventoPendiente == null || web == null) return;
         final String ev = eventoPendiente;
-        web.evaluateJavascript("(function(){if(window.miappNativoEvento){miappNativoEvento(" + ev + ");return 'ok'}return 'no'})()", r -> {
+        web.evaluateJavascript("(function(){try{if(window.miappNativoEvento){miappNativoEvento(" + ev + ");return 'ok'}return 'no'}catch(e){return 'error: '+e}})()", r -> {
+            Log.d("MiApp", "evento " + ev + " → " + r);
             if ("\"ok\"".equals(r) && ev.equals(eventoPendiente)) eventoPendiente = null;
         });
     }
@@ -152,7 +153,7 @@ public class MainActivity extends Activity {
         super.onResume();
         if (web != null) {
             web.onResume();
-            web.evaluateJavascript("window.miappNativoSync&&miappNativoSync()", null);
+            web.evaluateJavascript("(function(){try{return window.miappNativoSync?String(miappNativoSync()):'sin-funcion'}catch(e){return 'error: '+e}})()", r -> Log.d("MiApp", "sync al volver → " + r));
             despachar();
         }
     }
