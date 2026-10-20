@@ -1,0 +1,30 @@
+    RTC_WAKEUP #21: Alarm{ce9fd81 type 0 origWhen 1792486800000 whenElapsed 11048119 com.andru.miapp}
+      tag=*walarm*:com.andru.miapp.DIARIO
+      type=RTC_WAKEUP origWhen=2026-10-20 09:00:00.000 window=+30m0s0ms repeatInterval=0 count=0 flags=0x0
+      policyWhenElapsed: requester=+3h1m25s49ms app_standby=-6s225ms device_idle=-- battery_saver=-6s225ms tare=-6s225ms
+      whenElapsed=+3h1m25s49ms maxWhenElapsed=+3h31m25s49ms
+      operation=PendingIntent{da46e26: PendingIntentRecord{ff6aa67 com.andru.miapp broadcastIntent}}
+    ELAPSED #22: Alarm{69c2014 type 3 origWhen 14487718 whenElapsed 14487718 com.google.android.gms}
+      tag=*alarm*:CMAlarm
+      type=ELAPSED origWhen=+3h58m44s648ms window=+1h0m0s0ms repeatInterval=0 count=0 flags=0x0
+--
+    RTC_WAKEUP #48: Alarm{7e66dc3 type 0 origWhen 1792954800000 whenElapsed 479048118 com.andru.miapp}
+      tag=*walarm*:com.andru.miapp.SEMANAL
+      type=RTC_WAKEUP origWhen=2026-10-25 19:00:00.000 window=+30m0s0ms repeatInterval=0 count=0 flags=0x0
+      policyWhenElapsed: requester=+5d13h1m25s48ms app_standby=-6s225ms device_idle=-- battery_saver=-6s225ms tare=-6s225ms
+      whenElapsed=+5d13h1m25s48ms maxWhenElapsed=+5d13h31m25s48ms
+      operation=PendingIntent{a605640: PendingIntentRecord{acc6979 com.andru.miapp broadcastIntent}}
+    ELAPSED_WAKEUP #49: Alarm{dc1f6be type 2 origWhen 315360052922 whenElapsed 315360052922 com.google.android.gms}
+      tag=*walarm*:com.google.android.gms/.auth.proximity.firstparty.SystemMemoryCacheService
+      type=ELAPSED_WAKEUP origWhen=+3649d23h58m9s852ms window=+1h0m0s0ms repeatInterval=0 count=0 flags=0x0
+--
+          type=RTC_WAKEUP tag=*walarm*:com.andru.miapp.SEMANAL 
+          policyWhenElapsed: requester=+5d13h1m25s48ms app_standby=-6s248ms device_idle=-- battery_saver=-6s248ms tare=-6s248ms
+      #2: Reason=alarm_cancelled elapsed=-6s225ms rtc=2026-10-20 05:58:28.726
+        Snapshot:
+          type=RTC_WAKEUP tag=*walarm*:com.andru.miapp.DIARIO 
+          policyWhenElapsed: requester=+3h1m25s49ms app_standby=-6s248ms device_idle=-- battery_saver=-6s248ms tare=-6s248ms
+      #3: Reason=alarm_cancelled elapsed=-6s248ms rtc=2026-10-20 05:58:28.703
+        Snapshot:
+          type=RTC_WAKEUP tag=*walarm*:com.andru.miapp.SEMANAL 
+          policyWhenElapsed: requester=+5d13h1m25s49ms app_standby=-8s284ms device_idle=-- battery_saver=-8s284ms tare=-8s284ms

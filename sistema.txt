@@ -1,0 +1,5 @@
+10-20 05:56:30.011   522  2531 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.andru.miapp/.MainActivity} with LAUNCH_SINGLE_TASK from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+10-20 05:56:33.118   522   541 I ActivityTaskManager: Displayed com.andru.miapp/.MainActivity for user 0: +2s919ms
+10-20 05:57:14.970   522  2418 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.andru.miapp/.MainActivity (has extras)} with LAUNCH_SINGLE_TASK from uid 2000 (BAL_ALLOW_PERMISSION) result code=3
+10-20 05:57:23.867   522  2130 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.andru.miapp/.MainActivity (has extras)} with LAUNCH_SINGLE_TASK from uid 2000 (BAL_ALLOW_PERMISSION) result code=3
+10-20 05:58:20.185   522  2130 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.andru.miapp/.MainActivity (has extras)} with LAUNCH_SINGLE_TASK from uid 2000 (BAL_ALLOW_PERMISSION) result code=3

@@ -1,0 +1,1 @@
+{"vista":"inicio","onb":"ask","hoja":"","errores":[],"texto":"$\nMi App\nmar 20 oct · caja $0\n💬\nSin nube\n✕\n$\n¡Hola! 👋\n\n¿Primera vez o ya usas Mi App en otro celular?\n\n✨ Es mi primera vez 📱 Ya la uso en otro celular\n\nSi ya la usas, conectamos tu nube y traemos tus datos. No te pedimos saldos.\n\n📸\n🎤\n➤\nalmuerzo 18 mil\ncompré ps5 1.2M nequi\nvendí ps5 1.5M efecti"}

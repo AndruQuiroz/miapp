@@ -1,0 +1,1 @@
+Mi App | nativo=object | {"leerNotis":true,"avisos":true,"bateria":false,"marca":"Google","android":34,"capturas":0,"ultimaApp":"","ultimaT":0,"version":"1.0.8"}

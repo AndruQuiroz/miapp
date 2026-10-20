@@ -1,0 +1,4 @@
+                android.title=String (📊 Tu semana)
+                android.text=String (📊 Sin ventas esta semana
+                android.title=String (☀️ Mi App · tu día)
+                android.text=String (📲 Tienes 2 movimientos por clasificar)

@@ -1,0 +1,20 @@
+--------- beginning of main
+10-20 05:56:32.332  2686  2686 D MiApp   : onCreate (recreada=false)
+10-20 05:56:32.881  2686  2686 D MiApp   : listener conectado
+10-20 05:56:33.535  2686  2686 D MiApp   : sync al volver → "sin-funcion"
+10-20 05:56:37.631  2686  2686 D MiApp   : recordatorio android.intent.action.BOOT_COMPLETED
+10-20 05:57:03.697  2686  2686 D MiApp   : captura com.android.shell → Nequi Recibiste $1.600.000 de CAMILO PEREZ
+10-20 05:57:14.999  2686  3982 D MiApp   : confirmados 1
+10-20 05:57:15.005  2686  2686 D MiApp   : js: [nativo] sync 1
+10-20 05:57:15.019  2686  2686 D MiApp   : evento {"accion":"pend"} → "ok"
+10-20 05:57:15.020  2686  2686 D MiApp   : sync al volver → "0"
+10-20 05:57:23.887  2686  2686 D MiApp   : evento {"accion":"voz","noti":"Nequi Recibiste $1.600.000 de CAMILO PEREZ","id":"x1"} → "ok"
+10-20 05:57:23.887  2686  2686 D MiApp   : sync al volver → "0"
+10-20 05:58:00.654  2686  2686 D MiApp   : sync al volver → "0"
+10-20 05:58:16.354  2686  2686 D MiApp   : captura com.android.shell → Nequi Enviaste $45.000 a TIENDA X
+10-20 05:58:20.191  2686  3982 D MiApp   : confirmados 1
+10-20 05:58:20.191  2686  2686 D MiApp   : js: [nativo] sync 1
+10-20 05:58:20.258  2686  2686 D MiApp   : evento {"accion":"pend"} → "ok"
+10-20 05:58:20.259  2686  2686 D MiApp   : sync al volver → "0"
+10-20 05:58:28.701  2686  2686 D MiApp   : recordatorio com.andru.miapp.DIARIO
+10-20 05:58:28.725  2686  2686 D MiApp   : recordatorio com.andru.miapp.SEMANAL
