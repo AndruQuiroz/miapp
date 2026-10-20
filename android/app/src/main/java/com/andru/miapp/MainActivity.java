@@ -96,6 +96,7 @@ public class MainActivity extends Activity {
         });
 
         Avisos.canales(this);
+        Recordatorios.programar(this);
         pedirPermisoNotis();
         eventoPendiente = eventoDe(getIntent());
         Log.d("MiApp", "onCreate (recreada=" + (saved != null) + ")");

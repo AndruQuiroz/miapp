@@ -28,7 +28,7 @@ public class NotiListener extends NotificationListenerService {
             if (!Store.esDePlata(pkg, texto)) return;
             JSONObject it = Store.agregar(this, pkg, texto, sbn.getPostTime());
             Log.d("MiApp", "captura " + pkg + " → " + (it == null ? "repetida" : texto));
-            if (it != null) Avisos.preguntar(this, it);
+            if (it != null) { Avisos.preguntar(this, it); Widget.actualizar(this); }
         } catch (Exception e) {
             Log.e("MiApp", "captura falló", e);
         }

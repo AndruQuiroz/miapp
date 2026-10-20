@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.2.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -71,6 +71,7 @@ const get = (col, id) => L(DB, col).find(x => x.id === id) || null;
 function commit(msg, opts){
   saveDB();
   render();
+  if(NATIVO) nativoResumenPronto();
   scheduleSync();
   if(msg) toast(msg, opts);
 }
@@ -140,6 +141,7 @@ async function sync(manual){
     setSync('ok', 'Última sync: ' + horaTxt(CFG.last));
     afterSync();
     render();
+    if(NATIVO) nativoResumenPronto();
     if(manual) toast('☁️ Al día');
   } catch(e){
     const msg = String(e && e.message || e);
@@ -3062,11 +3064,32 @@ function miappNativoEvento(ev){
       const p = L(DB, 'pend').find(x => x.nid === ev.id || x.raw === ev.noti);
       openVoz({noti: ev.noti, bol: p ? p.bolsillo : bolsilloDePkg('', ev.noti)});
     } else openVoz({});
+  } else if(ev.accion === 'asis'){
+    openAsis();
   } else if(ev.accion === 'pend'){
     setView('inicio');
     if(L(DB, 'pend').length >= 2) openPendTodos();
   } else setView('inicio');
 }
+/* resumen para el widget y los recordatorios del teléfono (los calcula Android cada día con estos datos) */
+let RES_T = 0;
+function nativoResumenPronto(){ clearTimeout(RES_T); RES_T = setTimeout(nativoResumen, 400); }
+function nativoResumen(){
+  if(!NATIVO || !DB) return;
+  try {
+    const cp = cobrosPend(DB), t = today();
+    const lastU = ['items', 'gastos', 'ingresos', 'abonos', 'transfers', 'cobros'].reduce((mx, c) => L(DB, c).reduce((m, x) => Math.max(m, +x.u || 0), mx), 0);
+    const extra = String(remindersText(DB) || '').split('\n').filter(l => /^(🚨|⚠️)/.test(l));
+    MiAppNativo.resumen(JSON.stringify({
+      caja: cajaTotal(), pend: L(DB, 'pend').length, deben: sum(cp, 'pend'),
+      vencidos: cp.filter(c => c.compromiso && c.compromiso <= t).length,
+      cobros: cp.filter(c => c.compromiso).map(c => ({nombre: c.nombre, pend: c.pend, compromiso: c.compromiso})),
+      ultimoRegistro: lastU > 1 ? lastU : 0, semana: summaryText(DB), extra, actualizado: Date.now(),
+      recDiario: CFG.recDiario !== false, recSemana: CFG.recSemana !== false, widgetPlata: CFG.widgetPlata !== false
+    }));
+  } catch(e){ console.log('[nativo] resumen falló ' + e); }
+}
+
 /* botón "atrás" de Android: cierra la hoja abierta o vuelve a Inicio */
 function miappAtras(){
   if(SHEET === 'form'){ closeForm(); return true; }
@@ -3098,10 +3121,21 @@ function renderAndroid(){
     fila(e.bateria, 'Batería sin restricciones', e.bateria ? 'Activo' : 'Para que el teléfono no la cierre', 'bateria', 'Abrir', 'and-bateria') +
     (xiaomi ? fila(false, 'Inicio automático (Xiaomi/Poco)', 'Actívalo para Mi App: así sigue leyendo Nequi aunque la cierres', 'autoinicio', 'Abrir', 'and-auto') : '') +
     `<div class="pbtns" style="margin-top:8px"><button type="button" class="btn b-b" data-a="andProbar" data-testid="and-probar">🧪 Probar captura</button></div>
-    <p class="hint" style="margin-top:8px">Botón en la cortina: baja la cortina → lápiz ✏️ (editar) → arrastra <b>Mi App 🎙️</b> arriba.<br>App ${esc(e.version || '')}</p>`;
+    <div class="sec-h" style="margin-top:14px"><span class="sec-t">⏰ Recordatorios</span></div>
+    ${[['recDiario', 'Cada día 9 a. m.', 'Cobros vencidos o de hoy, pendientes por clasificar y si llevas días sin registrar'],
+       ['recSemana', 'Domingo 7 p. m.', 'El resumen de tu semana: ventas, ganancia, gastos, caja'],
+       ['widgetPlata', 'Mostrar la plata en el widget', 'Apágalo si no quieres que se vea tu caja en la pantalla de inicio']]
+      .map(([k, t, sub]) => `<div class="kvline" data-testid="and-${k}"><span style="min-width:0"><b>${t}</b><br><small class="mut">${sub}</small></span>
+        <button type="button" class="btn ${CFG[k] !== false ? 'b-g' : 'b-gh'}" data-a="andToggle" data-k="${k}">${CFG[k] !== false ? 'Sí' : 'No'}</button></div>`).join('')}
+    <div class="pbtns" style="margin-top:8px"><button type="button" class="btn b-gh" data-a="andRec" data-q="dia" data-testid="and-rec-dia">🧪 Probar el del día</button>
+      <button type="button" class="btn b-gh" data-a="andRec" data-q="semana">🧪 Probar el semanal</button></div>
+    <p class="hint" style="margin-top:10px"><b>Widget:</b> mantén presionado el fondo de tu pantalla de inicio → Widgets → <b>Mi App</b>.<br>
+      <b>Botón en la cortina:</b> baja la cortina → lápiz ✏️ (editar) → arrastra <b>Mi App 🎙️</b> arriba.<br>App ${esc(e.version || '')}</p>`;
 }
 Object.assign(ACT, {
   andAbrir: el => { try { MiAppNativo.abrir(el.dataset.q); } catch(e){} },
+  andToggle: el => { const k = el.dataset.k; CFG[k] = CFG[k] === false; saveCfg(); nativoResumen(); renderAndroid(); },
+  andRec: el => { nativoResumen(); try { MiAppNativo.probarRecordatorio(el.dataset.q); toast('Mira la notificación arriba 👆'); } catch(e){ toast('Actualiza la app de Android para esto', {err: true}); } },
   andProbar: () => { try { MiAppNativo.probar(); toast('📲 Mandé un movimiento de prueba de $1.000: mira la notificación arriba', {ms: 5000}); setTimeout(() => miappNativoSync(), 1200); } catch(e){ toast('No pude probar', {err: true}); } }
 });
 
@@ -3453,6 +3487,7 @@ function init(){
   }
   if(NATIVO){
     miappNativoSync();
+    nativoResumenPronto();
     document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible'){ miappNativoSync(); if(UI.view === 'mas') render(); } });
     setTimeout(() => { try { MiAppNativo.listo(); } catch(e){} }, 50);
   }

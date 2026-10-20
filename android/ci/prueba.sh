@@ -74,9 +74,22 @@ sleep 6
 cdp "JSON.stringify(L(DB,'pend').map(p=>p.monto))" > $OUT/pend-final.json
 foto 7-final
 
+# recordatorios: el del día y el semanal (los dispara Android con la alarma; aquí a mano)
+cdp "nativoResumen(); 'ok'"
+sleep 2
+adb shell am broadcast -n $PKG/.Recordatorios -a com.andru.miapp.DIARIO
+adb shell am broadcast -n $PKG/.Recordatorios -a com.andru.miapp.SEMANAL
+sleep 3
+adb shell cmd statusbar expand-notifications
+sleep 3
+adb exec-out screencap -p > $OUT/8-recordatorios.png
+adb shell cmd statusbar collapse
+adb shell dumpsys notification --noredact | grep -E "android.title=|android.text=" | grep -iE "tu d|semana|clasificar" > $OUT/recordatorios.txt
+adb shell dumpsys alarm | grep -A3 "com.andru.miapp" | head -30 > $OUT/alarmas.txt
 adb logcat -d -s MiApp:V > $OUT/logcat.txt
 adb logcat -d -b crash > $OUT/crash.txt
 adb logcat -d | grep -E "AndroidRuntime|ActivityTaskManager.*$PKG" | tail -60 > $OUT/sistema.txt
 adb shell dumpsys notification --noredact | grep -B2 -A12 "pkg=$PKG" | head -120 > $OUT/notis.txt
 if grep -q 1600000 $OUT/pend.json; then echo "OK_CAPTURA" > $OUT/resultado.txt; else echo "FALLO_CAPTURA" > $OUT/resultado.txt; fi
+if grep -qi "semana" $OUT/recordatorios.txt && grep -qi "tu d" $OUT/recordatorios.txt; then echo "OK_RECORDATORIOS" >> $OUT/resultado.txt; else echo "FALLO_RECORDATORIOS" >> $OUT/resultado.txt; fi
 cat $OUT/resultado.txt $OUT/estado.txt $OUT/pend.json $OUT/info-*.txt

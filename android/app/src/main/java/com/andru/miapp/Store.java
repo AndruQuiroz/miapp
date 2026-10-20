@@ -84,6 +84,15 @@ final class Store {
         }
     }
 
+    /** Resumen que deja la app web (caja, pendientes, cobros con fecha, textos) para el widget y los recordatorios. */
+    static synchronized void guardarResumen(Context c, String json) {
+        try { new JSONObject(json); prefs(c).edit().putString("resumen", json).apply(); } catch (JSONException ignored) {}
+    }
+
+    static synchronized JSONObject resumen(Context c) {
+        try { return new JSONObject(prefs(c).getString("resumen", "{}")); } catch (JSONException e) { return new JSONObject(); }
+    }
+
     static int total(Context c) { return prefs(c).getInt("total", 0); }
     static String ultima(Context c) { return prefs(c).getString("ultima", ""); }
     static long ultimaT(Context c) { return prefs(c).getLong("ultimaT", 0); }

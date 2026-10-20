@@ -112,6 +112,17 @@ public class Puente {
         if (it != null) Avisos.preguntar(a, it);
     }
 
+    /** La app web deja aquí su resumen; se actualiza el widget y se reprograman los recordatorios. */
+    @JavascriptInterface public void resumen(String json) {
+        Store.guardarResumen(a, json);
+        Widget.actualizar(a);
+        Recordatorios.programar(a);
+    }
+
+    @JavascriptInterface public void probarRecordatorio(String cual) {
+        if ("semana".equals(cual)) Recordatorios.semanal(a, true); else Recordatorios.diario(a, true);
+    }
+
     @JavascriptInterface public void aviso(int id, String titulo, String texto, String accion) { Avisos.simple(a, id, titulo, texto, accion); }
 
     /** Guarda un archivo (respaldo) en Descargas. */

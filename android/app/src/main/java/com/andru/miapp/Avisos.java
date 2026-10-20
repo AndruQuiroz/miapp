@@ -46,7 +46,15 @@ final class Avisos {
         return "?";
     }
 
-    static String plata(long v) { return "$" + String.format(Locale.ROOT, "%,d", v).replace(',', '.'); }
+    static String plata(long v) { return (v < 0 ? "-$" : "$") + String.format(Locale.ROOT, "%,d", Math.abs(v)).replace(',', '.'); }
+
+    /** $6.8M · $850K · $45.000 (para el widget) */
+    static String plataCorta(long v) {
+        long a = Math.abs(v);
+        String s = a >= 1_000_000 ? String.format(Locale.ROOT, "%.1fM", a / 1_000_000.0).replace(".0M", "M").replace('.', ',')
+                : a >= 100_000 ? (a / 1000) + "K" : String.format(Locale.ROOT, "%,d", a).replace(',', '.');
+        return (v < 0 ? "-$" : "$") + s;
+    }
 
     static PendingIntent abrir(Context c, int code, String accion, String noti, String id) {
         Intent i = new Intent(c, MainActivity.class);
