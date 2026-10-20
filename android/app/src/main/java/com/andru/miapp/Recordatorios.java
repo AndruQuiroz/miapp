@@ -27,7 +27,7 @@ public class Recordatorios extends BroadcastReceiver {
         Log.d("MiApp", "recordatorio " + a);
         if (DIARIO.equals(a)) diario(c, false);
         else if (SEMANAL.equals(a)) semanal(c, false);
-        else programar(c);   // BOOT_COMPLETED / MY_PACKAGE_REPLACED
+        programar(c);   // cada alarma es de una vez: se programa la siguiente (y al prender el teléfono / actualizar la app)
         Widget.actualizar(c);
     }
 
@@ -56,8 +56,9 @@ public class Recordatorios extends BroadcastReceiver {
         PendingIntent d = pi(c, DIARIO, 1), s = pi(c, SEMANAL, 2);
         am.cancel(d);
         am.cancel(s);
-        if (r.optBoolean("recDiario", true)) am.setInexactRepeating(AlarmManager.RTC_WAKEUP, proxima(0, 9), AlarmManager.INTERVAL_DAY, d);
-        if (r.optBoolean("recSemana", true)) am.setInexactRepeating(AlarmManager.RTC_WAKEUP, proxima(Calendar.SUNDAY, 19), AlarmManager.INTERVAL_DAY * 7, s);
+        // ventana corta (9:00–9:30 / 19:00–19:30): no necesita permiso de alarma exacta y no llega de madrugada
+        if (r.optBoolean("recDiario", true)) am.setWindow(AlarmManager.RTC_WAKEUP, proxima(0, 9), 30 * 60 * 1000L, d);
+        if (r.optBoolean("recSemana", true)) am.setWindow(AlarmManager.RTC_WAKEUP, proxima(Calendar.SUNDAY, 19), 30 * 60 * 1000L, s);
     }
 
     static String hoy() { return new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new Date()); }
