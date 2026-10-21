@@ -92,11 +92,33 @@ function extraerDatosTelefono(texto){
     if(bu) out.almac = bu;
   }
 
-  // ── Extras útiles si aparecen: modelo y número de serie
-  const mm = plano.match(/(?:nombre\s+del\s+modelo|model\s+name|nombre\s+del\s+dispositivo|modelo)\s*[:\n]?\s*([^\n]{3,40})/i);
-  if(mm && !/^n[uú]mero/i.test(mm[1])) out.modelo = mm[1].trim().replace(/\b(galaxy\s+)5(\d{2})\b/i, '$1S$2').replace(/\bi[Pp]hone\b/, 'iPhone');
-  const ms = plano.match(/(?:n[uú]mero\s+de\s+serie|serial\s+number|serie)\s*[:\n]?\s*([A-Z0-9]{8,14})/i);
+  // ── Batería por capacidades (3uTools): "Full Charge Capacity 2800 / Design 3200" → salud = full/design
+  if(out.bateria == null){
+    const full = plano.match(/(?:full\s*charge\s*capacity|capacidad\s*(?:de\s*)?carga\s*(?:total|completa)|capacidad\s*actual)[^\d\n]{0,15}(\d{3,5})/i);
+    const dis = plano.match(/(?:design(?:ed)?\s*capacity|capacidad\s*(?:de\s*)?dise[nñ]o|capacidad\s*original)[^\d\n]{0,15}(\d{3,5})/i);
+    if(full && dis){ const v = Math.round(+full[1] / +dis[1] * 100); if(v >= 40 && v <= 100) out.bateria = v; }
+  }
+
+  // ── Ciclos de carga (3uTools / iOS 17+): "Cycle Count 312", "Ciclos de carga 312", "Battery Cycles: 312"
+  const rc = /(?:cycle\s*count|ciclos?\s*(?:de\s*carga)?|battery\s*cycles?|n[uú]mero\s*de\s*ciclos)[^\d\n]{0,15}(\d{1,4})/i;
+  const mc = plano.match(rc);
+  if(mc){ const v = +mc[1]; if(v >= 0 && v <= 5000) out.ciclos = v; }
+
+  // ── Extras útiles si aparecen: modelo, número de serie y color
+  // Nombre comercial completo del iPhone (3uTools y Ajustes lo muestran así)
+  const miP = plano.match(/\b(iphone\s+(?:1[1-9]|[2-9]\d)(?:\s*(?:pro\s*max|pro|plus|mini|air|e))?)\b/i)
+    || plano.match(/\b(iphone\s+(?:xs\s*max|xs|xr|x|se)(?:\s*\(?\s*\d?(?:st|nd|rd|th|[aª])?\s*gen[^)]*\)?)?)\b/i)
+    || plano.match(/\b(iphone\s+8\s*plus|iphone\s+8|iphone\s+7\s*plus|iphone\s+7)\b/i);
+  if(miP) out.modelo = miP[1].replace(/\s+/g, ' ').replace(/\bi[Pp]hone\b/, 'iPhone').replace(/\bpro\s*max\b/i, 'Pro Max').replace(/\bpro\b/i, 'Pro').replace(/\bplus\b/i, 'Plus').replace(/\bmini\b/i, 'mini').replace(/\bmax\b/i, 'Max');
+  if(!out.modelo){
+    const mm = plano.match(/(?:nombre\s+del\s+modelo|model\s+name|nombre\s+del\s+dispositivo|device\s+name|modelo|model)\s*[:\n]?\s*([^\n]{3,40})/i);
+    if(mm && !/^n[uú]mero|^[A-Z]{1,2}\d{3,}/i.test(mm[1].trim())) out.modelo = mm[1].trim().replace(/\b(galaxy\s+)5(\d{2})\b/i, '$1S$2').replace(/\bi[Pp]hone\b/, 'iPhone');
+  }
+  const ms = plano.match(/(?:n[uú]mero\s+de\s+serie|serial\s+number|serial|serie)\s*(?:no\.?|number|n[uú]mero)?\s*[:\n]?\s*([A-Z0-9]{8,14})\b/i);
   if(ms) out.serie = ms[1];
+  // Color: etiqueta explícita (3uTools "Color: Desert Titanium", Ajustes raramente lo trae)
+  const mco = plano.match(/(?:^|\n)\s*(?:color|colour)\s*[:\n]?\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ \-]{2,28})/i);
+  if(mco){ const c = mco[1].trim(); if(!/^(de|del|the|is)\b/i.test(c)) out.color = c; }
   return out;
 }
 

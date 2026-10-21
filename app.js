@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.3.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -831,6 +831,8 @@ const bateriaNum = x => { if(x === '' || x == null) return null; const n = Math.
 function equipoDe(v){
   const o = {}, b = bateriaNum(v.bateria);
   if(b != null && !isNaN(b)) o.bateria = b;
+  const c = Math.round(parseFloat(String(v.ciclos == null ? '' : v.ciclos).replace(/[^\d.]/g, '')));
+  if(!isNaN(c) && c >= 0 && c <= 5000 && String(v.ciclos).trim() !== '') o.ciclos = c;
   ['imei', 'imei2', 'serie', 'almac', 'color'].forEach(k => { const x = k === 'almac' ? almacTxt(v[k]) : k === 'color' ? titleCase(clean(v[k])) : clean(v[k]); if(x) o[k] = x; });
   return o;
 }
@@ -886,11 +888,18 @@ function fichaHTML(h){
   b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Historia</span></div><ol class="tl" data-testid="ficha-tl">${ev.map(e =>
     `<li><span class="tl-i">${e.ico}</span><div><b>${e.t}</b><div class="meta">${fdE(e.f)}${e.s ? ' · ' + e.s : ''}</div></div></li>`).join('')}</ol>`;
   /* datos del equipo y contactos */
-  const eq = [['IMEI', it.imei], ['IMEI 2', it.imei2], ['Serie', it.serie], ['Batería', it.bateria != null && it.bateria !== '' ? it.bateria + '%' : ''], ['Almacenamiento', it.almac], ['Color', it.color], ['Estado', it.cond]].filter(x => x[1]);
+  const eq = [['IMEI', it.imei], ['IMEI 2', it.imei2], ['Serie', it.serie], ['Batería', it.bateria != null && it.bateria !== '' ? it.bateria + '%' : ''],
+    ['Ciclos', it.ciclos != null && it.ciclos !== '' ? String(it.ciclos) : ''], ['Almacenamiento', it.almac], ['Color', it.color], ['Estado', it.cond]].filter(x => x[1]);
   b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Datos del equipo</span></div>` + (eq.length
     ? eq.map(([l, v]) => `<div class="kvline"><span>${l}</span><b class="mono">${esc(v)}</b></div>`).join('')
     : '<p class="hint">Sin datos (IMEI, batería…). Súbelos con una foto o agrégalos con ✏️ Editar.</p>');
-  if(!it.del) b += `<button type="button" class="btn b-b full" style="margin-top:8px" data-a="ocrFicha" data-id="${esc(it.id)}" data-testid="ocr-ficha">📷 Leer datos de una foto</button>`;
+  if(it.imei){
+    b += it.imeiVerif
+      ? `<div class="kvline" data-testid="imei-verif"><span>🔍 IMEI verificado</span><b>${esc(fdE(it.imeiVerif))} · ${it.imeiReporte === 'mal' ? '<span class="neg">reportado ⚠️</span>' : '<span class="pos">limpio ✅</span>'}</b></div>`
+      : '';
+    if(!it.del) b += `<div class="pbtns" style="margin-top:8px"><button type="button" class="btn b-gh" data-a="verifImei" data-id="${esc(it.id)}" data-testid="verif-imei">🔍 Verificar IMEI${it.imeiVerif ? ' otra vez' : ''}</button></div>`;
+  }
+  if(!it.del) b += `<button type="button" class="btn b-b full" style="margin-top:8px" data-a="ocrFicha" data-id="${esc(it.id)}" data-testid="ocr-ficha">📷 Leer datos de una foto / reporte 3uTools</button>`;
   const ct = [['Se lo compraste a', h.proveedor, it.proveedorId], ['Se lo vendiste a', h.venta && h.venta.cliente, it.clienteId]].filter(x => x[1]);
   if(ct.length) b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Contactos</span></div>` + ct.map(([l, n, id]) =>
     `<div class="kvline"><span>${l}</span>${id && get('contactos', id) ? `<button type="button" class="lnk" data-a="goContacto" data-id="${esc(id)}">${esc(n)}</button>` : `<b>${esc(n)}</b>`}</div>`).join('');
@@ -1006,7 +1015,7 @@ async function ocrRun(files){
   else if(st.mode === 'movs') openFotoMovs(r.texto || '', r);
   else ocrConfirm(st.itemId, r);
 }
-const OCR_KEYS = [['imei', 'IMEI'], ['imei2', 'IMEI 2'], ['bateria', 'Batería %'], ['almac', 'Almacenamiento'], ['serie', 'Número de serie']];
+const OCR_KEYS = [['imei', 'IMEI'], ['imei2', 'IMEI 2'], ['bateria', 'Batería %'], ['ciclos', 'Ciclos'], ['almac', 'Almacenamiento'], ['color', 'Color'], ['serie', 'Número de serie']];
 const ocrVal = (k, x) => x == null || x === '' ? '' : k === 'almac' ? almacTxt(String(x)) : String(x);
 const ocrModelWarn = (r, desc) => {
   if(!r.modelo || !desc) return '';
@@ -1063,13 +1072,31 @@ function ocrGuardar(itemId){
     if(!x) continue;
     if(/^imei/.test(k)){ x = x.replace(/\D/g, ''); if(x.length !== 15){ toast('El ' + l + ' debe tener 15 dígitos', {err: true}); inp.focus(); return; } }
     if(k === 'bateria'){ const n = bateriaNum(x); if(isNaN(n) || n < 0 || n > 100){ toast('La batería va de 0 a 100 %', {err: true}); inp.focus(); return; } o[k] = n; done.push('🔋 ' + n + '%'); continue; }
+    if(k === 'ciclos'){ const n = Math.round(parseFloat(x.replace(/[^\d.]/g, ''))); if(isNaN(n) || n < 0 || n > 5000){ toast('Los ciclos deben ser un número', {err: true}); inp.focus(); return; } o[k] = n; done.push('🔄 ' + n + ' ciclos'); continue; }
     if(k === 'almac') x = almacTxt(x);
-    o[k] = x; done.push(k === 'almac' ? x : k === 'serie' ? 'serie' : l);
+    if(k === 'color') x = titleCase(x);
+    o[k] = x; done.push(k === 'almac' ? x : k === 'serie' ? 'serie' : k === 'color' ? x : l);
   }
   if(!done.length) return toast('Marca al menos un dato para guardar', {err: true});
   put('items', Object.assign({}, it, o));
   openFicha(itemId);
   commit('📷 ' + it.desc + ': ' + done.join(' · '));
+}
+
+/* Verificar que el IMEI no esté reportado: copia el IMEI, abre la consulta y deja registrar el resultado */
+function verifImei(id){
+  const it = get('items', id);
+  if(!it || !it.imei) return;
+  copyText(it.imei, 'IMEI ' + it.imei);
+  const url = 'https://www.google.com/search?q=' + encodeURIComponent('consultar IMEI Colombia reportado ' + it.imei);
+  const b = `<p style="margin-bottom:10px">Copié el <b class="mono">${esc(it.imei)}</b>. Ábrelo en la consulta y pégalo (ya está copiado).</p>
+    <a class="btn b-b full" href="${url}" target="_blank" rel="noopener" data-testid="verif-abrir" style="display:flex;justify-content:center;text-decoration:none;margin-bottom:6px">🔎 Abrir la consulta de IMEI</a>
+    <p class="hint" style="margin-bottom:12px">La consulta oficial la hacen los operadores y la CRC. Si el buscador no te lleva directo, revisa con tu operador (Claro, Tigo, Movistar, WOM) o en la página de la CRC.</p>
+    <p style="margin-bottom:8px"><b>Cuando veas el resultado, márcalo aquí:</b></p>
+    <div class="pbtns"><button type="button" class="btn b-gh" data-a="verifResult" data-id="${esc(id)}" data-r="mal" data-testid="verif-mal" style="color:var(--R);border-color:rgba(255,87,87,.35)">⚠️ Está reportado</button>
+     <button type="button" class="btn b-g" data-a="verifResult" data-id="${esc(id)}" data-r="ok" data-testid="verif-ok">✅ Está limpio</button></div>`;
+  openInfo({kind: 'verif', id}, '🔍 Verificar IMEI', b,
+    `<button type="button" class="btn b-gh" data-a="infoClose">Cerrar</button>`);
 }
 
 /* ═════════ 3. FORMULARIOS (motor genérico + tipos) ═════════ */
@@ -1267,6 +1294,7 @@ function saveForm(){
     const p = get('pend', d._pend);
     if(p){ learnRule(p, kind, res.rec || {}); remove('pend', p.id); }
   }
+  if(d._pagoPend){ const p = get('pend', d._pagoPend); if(p) remove('pend', p.id); }   // el pago de Nequi ya quedó como la compra
   if(fromQuick){ const q = $('#qInput'); if(q) q.value = ''; }
   closeForm();
   if(res.after) res.after();
@@ -1401,11 +1429,12 @@ const EQ_FIELDS = () => [
   {k: 'imei', label: 'IMEI (opcional)', type: 'text', im: 'numeric', cap: 'off', ph: '15 dígitos (*#06#)', show: eqShow},
   {k: 'imei2', label: 'IMEI 2', type: 'text', im: 'numeric', cap: 'off', ph: 'Si tiene doble SIM', show: v => eqShow(v) && !!clean(v.imei2)},
   {k: 'bateria', label: 'Batería %', type: 'text', im: 'numeric', ph: 'Ej: 89', show: eqShow},
+  {k: 'ciclos', label: 'Ciclos de batería', type: 'text', im: 'numeric', ph: 'Ej: 312 (de 3uTools)', show: v => eqShow(v) && v.ciclos != null && v.ciclos !== ''},
   {k: 'almac', label: 'Almacenamiento', type: 'text', cap: 'off', ph: 'Ej: 128GB', show: eqShow},
   {k: 'color', label: 'Color', type: 'text', ph: 'Ej: Azul', show: eqShow},
   {k: 'serie', label: 'Número de serie', type: 'text', cap: 'characters', ph: 'Opcional', show: v => eqShow(v) && !!clean(v.serie)}
 ];
-const prepEquipo = d => { if(!d._equipo && ['imei', 'imei2', 'bateria', 'almac', 'color', 'serie'].some(k => d[k] != null && d[k] !== '')) d._equipo = '1'; };
+const prepEquipo = d => { if(!d._equipo && ['imei', 'imei2', 'bateria', 'ciclos', 'almac', 'color', 'serie'].some(k => d[k] != null && d[k] !== '')) d._equipo = '1'; };
 const CONTACT_FIELDS = (k, label, ph) => [
   {k, label, type: 'text', list: 'dl-contactos', cap: 'words', ph},
   {k: k + 'Nuevo', label: '¿Lo guardo en tus contactos?', type: 'seg', val: 'no', opts: [['no', 'No'], ['si', 'Sí, guardarlo']], show: v => !!clean(v[k]) && !contactoPor(v[k])}
@@ -1595,8 +1624,10 @@ const FORMS = {
         const c = L(DB, 'cobros').find(x => x.itemId === it.id);
         if(c && !wasFull) put('cobros', Object.assign({}, c, {total: cash - it.sellPaid}));
       } else it.targetPrice = num(v.targetPrice) || null;
-      ['imei', 'imei2', 'serie', 'bateria', 'almac', 'color', 'proveedor', 'proveedorId'].forEach(k => delete it[k]);   // §14.4: datos del equipo y contactos
+      const imeiAntes = it.imei;
+      ['imei', 'imei2', 'serie', 'bateria', 'ciclos', 'almac', 'color', 'proveedor', 'proveedorId'].forEach(k => delete it[k]);   // §14.4: datos del equipo y contactos
       Object.assign(it, equipoDe(v));
+      if(it.imei !== imeiAntes){ delete it.imeiVerif; delete it.imeiReporte; }   // si cambió el IMEI, la verificación anterior ya no vale
       const prov = linkContacto(v.proveedor, v.proveedorNuevo, 'proveedor');
       if(prov.nombre) it.proveedor = prov.nombre;
       if(prov.id) it.proveedorId = prov.id;
@@ -2004,7 +2035,7 @@ function classify(id, k){
   if(!p) return;
   const f = p.fecha || today(), b = p.bolsillo || defPocket(), m = +p.monto || 0, q = titleCase(p.quien || ''), base = {_pend: p.id};
   const M = {
-    compra: () => openForm('compra', Object.assign(base, {buyPrice: m, buyPocket: b, buyDate: f})),
+    compra: () => openForm('compra', Object.assign(base, {buyPrice: m, buyPocket: b, buyDate: f}, q ? {proveedor: q} : {})),
     gastoN: () => openForm('gasto', Object.assign(base, {valor: m, bolsillo: b, fecha: f, tipo: 'negocio', desc: q, cat: q ? guessGCat(q) : 'Otro'})),
     gastoP: () => openForm('gasto', Object.assign(base, {valor: m, bolsillo: b, fecha: f, tipo: 'personal', desc: q, cat: q ? guessGCat(q) : 'Otro'})),
     transferOut: () => openForm('transfer', Object.assign(base, {from: b, to: otherPocket(b), monto: m, fecha: f})),
@@ -2124,6 +2155,8 @@ const ACT = {
   ocrFicha: el => ocrPick('ficha', el.dataset.id),
   ocrForm: () => { if(F) ocrPick('form', F.d && F.d.id); },
   ocrGuardar: el => ocrGuardar(el.dataset.id),
+  verifImei: el => verifImei(el.dataset.id),
+  verifResult: el => { const it = get('items', el.dataset.id); if(it){ put('items', Object.assign({}, it, {imeiVerif: today(), imeiReporte: el.dataset.r})); closeInfo(); commit(el.dataset.r === 'mal' ? '⚠️ IMEI marcado como reportado' : '✅ IMEI verificado: limpio'); } },
   ocrTexto: () => { const p = $('#ocrRaw'); if(p) p.hidden = !p.hidden; },
   infoClose: () => closeInfo(),
   fichaVender: el => openForm('venta', {itemId: el.dataset.id}, {back: backToFicha(el.dataset.id)}),
@@ -2757,15 +2790,41 @@ function fotoMovsBolsillo(texto){
   const banco = ps.find(p => p.id !== 'nequi' && p.id !== 'efectivo' && normKey(p.nombre).length > 3 && t.includes(normKey(p.nombre)) && !/nequi/.test(t));
   return (banco || ps.find(p => p.id === 'nequi') || ps[0] || {id: ''}).id;
 }
+const esDatosEquipo = r => !!(r && (r.imei || r.serie || r.ciclos != null || (r.bateria != null && r.modelo) || (r.modelo && r.almac)));
 function openFotoMovs(texto, r){
   const movs = parseMovimientos(texto, {hoy: today()});
+  // Reporte de 3uTools / Ajustes del iPhone → arma la compra del equipo (no son movimientos)
+  if(esDatosEquipo(r) && movs.length <= 1){ return compraDeEquipo(r); }
   if(!movs.length){
-    const tel = r && (r.imei || r.bateria);
-    toast(tel ? 'Esa foto es la info de un celular: ábrela desde el producto en Stock (📷 Leer datos)' : 'No encontré movimientos en la foto. Usa el pantallazo de la lista de movimientos, que se vean los montos con $', {err: true, ms: 6500});
+    toast('No encontré movimientos en la foto. Usa el pantallazo de la lista de movimientos (que se vean los montos con $), o el reporte de 3uTools / Ajustes del equipo.', {err: true, ms: 7000});
     return;
   }
   const bolsillo = fotoMovsBolsillo(texto);
   fotoMovsMostrar(clasificarMovs(DB, movs, {bolsillo}), {bolsillo, saldo: movs.saldo, origen: 'foto'});
+}
+/* De un reporte de equipo (3uTools / Ajustes): abre la Compra con todo prellenado.
+   Si hubo un pago grande saliente por Nequi/banco en las últimas horas sin equipo asignado, le pone precio y proveedor. */
+function compraDeEquipo(r){
+  const d = {_equipo: '1', cond: 'bueno'};
+  if(r.modelo) d.desc = r.modelo;
+  d.cat = r.modelo && /iphone|galaxy|redmi|poco|moto|pixel|samsung/i.test(r.modelo) ? 'Celulares' : (r.imei ? 'Celulares' : (d.desc ? guessCat(d.desc) : 'Celulares'));
+  ['imei', 'imei2', 'serie', 'almac', 'color'].forEach(k => { if(r[k]) d[k] = r[k]; });
+  if(r.bateria != null) d.bateria = r.bateria;
+  if(r.ciclos != null) d.ciclos = r.ciclos;
+  const pago = pagoEquipoReciente();
+  if(pago){ d.buyPrice = pago.monto; d.buyPocket = pago.bolsillo || ''; if(pago.quien) d.proveedor = titleCase(pago.quien); d._pagoPend = pago.pendId || ''; d.buyDate = pago.fecha || today(); }
+  const got = [r.modelo, r.almac, r.color, r.bateria != null ? r.bateria + '%' : '', r.ciclos != null ? r.ciclos + ' ciclos' : '', r.imei ? 'IMEI ✅' : ''].filter(Boolean);
+  openForm('compra', d, {});
+  setTimeout(() => toast('📱 Leí: ' + got.join(' · ') + (pago ? ' · 💸 pago de ' + full(pago.monto) + ' de Nequi' : '. Escribe el precio.'), {ms: 7000}), 120);
+}
+/* El pago saliente grande más reciente (≥ MIN) que aún no está asignado a una compra: de "Por clasificar" o de un egreso sin equipo */
+const COMPRA_MIN = 300000, COMPRA_HORAS = 36;
+function pagoEquipoReciente(){
+  const limite = Date.now() - COMPRA_HORAS * 3600 * 1000;
+  const pend = L(DB, 'pend').filter(p => p.dir === 'out' && (+p.monto || 0) >= COMPRA_MIN && (+p.t || 0) >= limite)
+    .sort((a, b) => (+b.t || 0) - (+a.t || 0))[0];
+  if(pend) return {monto: +pend.monto, bolsillo: pend.bolsillo || 'nequi', quien: pend.quien || '', fecha: pend.fecha || today(), pendId: pend.id};
+  return null;
 }
 /* "Por clasificar" completo → la misma hoja de revisión (cada uno con su bolsillo) */
 function openPendTodos(){
