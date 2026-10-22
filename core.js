@@ -168,6 +168,11 @@ function parseNoti(text){
   else if(OUT_STRONG.test(low)) dir = 'out';
   else if(OUT_WEAK.test(low) && !PROMO.test(low)) dir = 'out';
 
+  // Reverso / anulación de una compra con tarjeta ("NEQUI: Reversamos 35.500,00 de tu compra en RAPPI… a tu Tarjeta"): la plata VUELVE
+  const REVERSO = /(reversamos|reversaron|reverso|reversi[oó]n|anulamos|anularon|anulaci[oó]n)/.test(low);
+  if(REVERSO) dir = 'in';
+  // Retención temporal ("*TEMPORARY HOLD"): todavía no es un movimiento
+  if(/temporary hold|retenci[oó]n temporal/.test(low)) return {monto: 0, dir: '?', quien: '', retencion: true};
   // Promo sin verbo fuerte de movimiento → no es un movimiento
   if(!IN_STRONG.test(low) && !OUT_STRONG.test(low) && !PENDING.test(low) && PROMO.test(low)) monto = 0;
   // Aviso de SALDO ("Tu saldo en Nequi es $1.234.567"): no es un movimiento (agregado por QA; si trae verbo de movimiento se respeta)
@@ -176,6 +181,10 @@ function parseNoti(text){
 
   /* ── Quién ── */
   let quien = '';
+  if(REVERSO){
+    const rq = t.match(/compra\s+en\s+(.+?)(?:\s+a\s+tu\s+(?:tarjeta|cuenta|nequi)\b.*)?$/i);
+    if(rq) return {monto, dir, quien: rq[1].trim(), reverso: true};
+  }
   const BL = /^(nequi|tu |su |el |la |los |las |un |una |bancolombia|daviplata|cuenta|colombia|forma|manera)/i;
   const NOT_NAME = /^(nequi|alguien|tu|te|la|el)$/i;
   let q;

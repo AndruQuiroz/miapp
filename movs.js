@@ -61,17 +61,83 @@ function mvEsRuido(t){
 /* El OCR lee la foto redonda del contacto como "O)", "0)", "©", "@"… delante del nombre */
 const mvSinBasura = s => String(s || '').replace(/^\s*[^\p{L}\p{N}\s]{0,2}\s*[OoQ0@©®eéc]?\s*[)\]}>|:.]\s+(?=\p{L})/u, '').replace(/^\s*[@©®°•·*]\s*(?=\p{L})/u, '').trim();
 /* Comercios colombianos comunes → categoría (antes que la adivinanza general) */
-const MV_COMERCIOS = [
-  ['Transporte', /\b(distracom|terpel|texaco|primax|biomax|esso|mobil|zeuss|petromil|gasolina|estacion de servicio|eds |parqueadero|peaje|metro de medellin|encicla|uber|didi|indrive|cabify|picap|civica|bolt)\b/],
-  ['Comida', /\b(d1|ara|exito|carulla|jumbo|olimpica|isimo|surtimax|super ?inter|pricesmart|makro|euro supermercados|consumo|colsubsidio|mercado|rappi|ifood|domicilios|mcdonald|kfc|frisby|crepes|el corral|presto|subway|juan valdez|oma|tostao|dunkin|panaderia|restaurante|frutas|carniceria|tienda|minimercado|autoservicio)\b/],
-  ['Personal', /\b(farmatodo|cruz verde|la rebaja|pasteur|locatel|drogueria|farmacia|falabella|zara|h ?& ?m|arturo calle|koaj|studio f|tennis|barberia|peluqueria|smart ?fit|bodytech|spinning)\b/],
-  ['Servicios', /\b(epm|une|claro|tigo|movistar|wom|etb|emcali|vanti|gases|acueducto|energia|internet|celular|recarga|soat|seguros?|sura|arriendo|administracion)\b/],
-  ['Entretenimiento', /\b(netflix|spotify|disney|hbo|prime video|amazon prime|youtube|apple\.com|google play|steam|playstation|xbox|cine|cinemark|procinal|cinecolombia|bar|discoteca|licorera)\b/],
-  ['Envíos', /\b(servientrega|interrapidisimo|inter rapidisimo|coordinadora|envia|tcc|deprisa|472|mensajeros urbanos)\b/],
-  ['Comisiones', /\b(4 ?x ?1000|gmf|cuota de manejo|comision|iva comision)\b/],
-  ['Publicidad', /\b(facebook ?ads|meta ?ads|facebk|instagram|tiktok ads|google ads|mercado ?libre|mercadolibre|olx)\b/]
+/* ═══ Comercios de Colombia/Medellín → categoría, para anotar los gastos SOLOS (sin preguntar) ═══
+   Cada entrada: [categoría, palabras (texto normalizado: minúsculas, sin tildes, solo letras/números), nombre bonito opcional, monto máximo opcional].
+   Va en orden: lo más específico primero. Las palabras se buscan como palabras completas. */
+const COMERCIOS = [
+  // Gasolina, parqueaderos, peajes, transporte
+  ['Transporte', 'eds|distracom|estacion de servicio|estacion servicio|terpel|primax|biomax|texaco|mobil|esso|zeuss|petromil|brio|puma energy|gulf|gasolinera|combustible|octanaje'],
+  ['Transporte', 'parqueadero|parqueaderos|parking|city parking|parkeo|parqueo|zona azul'],
+  ['Transporte', 'peaje|peajes|devimed|tunel de oriente|autopistas|concesion|flypass'],
+  ['Transporte', 'uber|didi|indrive|indriver|cabify|picap|bolt|beat|taxi|taxis libres|civica|metro de medellin|metroplus|encicla|transmilenio|terminal de transporte|avianca|latam|viva air|wingo|clic air|satena'],
+  // Domicilios y comida
+  ['Comida', 'rappi|ifood|didi food|domicilios com|mercadoni|merqueo|turbo', null, null],
+  ['Comida', 'mcdonalds|mc donalds|mcdonald s|kfc|frisby|el corral|corral|burger king|subway|dominos|domino s|papa johns|pizza hut|jenos|jeno s|presto|crepes|crepes waffles|wok|sr wok|archies|kokoriko|la brasa roja|qbano|sandwich qbano|buffalo wings|hooters|el rodeo|dlk|tacos|taco bell|chipotle|popeyes|wendys|wendy s|carls jr|frisby|hamburguesas|el pirata|la cosecha|mondongos|hatsu|sushi|pizza|pizzeria|restaurante|rest |asadero|cafeteria|comidas rapidas|perros|salchipapa'],
+  ['Comida', 'starbucks|juan valdez|tostao|oma|dunkin|krispy kreme|pan pa ya|panaderia|pasteleria|reposteria|helados|popsy|mimos|crepes|cafe|coffee|la ricura|cheesecake|postres|dulceria'],
+  ['Comida', 'd1|tiendas d1|ara|jeronimo martins|exito|almacenes exito|carulla|jumbo|olimpica|makro|pricesmart|euro supermercados|la vaquita|consumo|colsubsidio mercado|isimo|surtimax|super inter|superinter|oxxo|justo y bueno|mercamas|merkepaisa|supermercado|minimercado|autoservicio|fruver|carniceria|tienda'],
+  // Salud y cuidado personal
+  ['Personal', 'farmatodo|cruz verde|drogueria|droguerias|drogas|farmacia|farm|la rebaja|pasteur|locatel|colsubsidio drogueria|alemana|farmacenter|optica|opticas|odontologia|laboratorio|clinica|hospital'],
+  ['Personal', 'barberia|barber|peluqueria|spa|unas|nails|smart fit|smartfit|bodytech|spinning|gimnasio|gym'],
+  // Ropa, tiendas, tecnología, hogar
+  ['Personal', 'falabella|arturo calle|koaj|studio f|zara|h m|pull and bear|pull bear|bershka|stradivarius|mango|tennis|velez|totto|adidas|nike|new balance|gef|punto blanco|offcorss|americanino|chevignon|diesel|levis|levi s|quest|seven seven|ela|patprimo|mattelsa|bosi|spring step|payless|aldo|skechers|crocs|under armour|lacoste|tommy|polo'],
+  ['Personal', 'miniso|flying tiger|dollarcity|dolarcity|homecenter|home center|ikea|panamericana|alkosto|ktronix|tecnoplaza|jumbo home|easy|ferreteria|tauro|mercado libre|mercadolibre|amazon|temu|shein|aliexpress'],
+  // Suscripciones y entretenimiento
+  ['Entretenimiento', 'netflix|spotify|disney|hbo|max com|prime video|amazon prime|youtube|google play|apple com|itunes|steam|playstation|xbox|nintendo|crunchyroll|paramount|star plus|deezer|twitch|cine colombia|cinecolombia|cinemark|procinal|royal films|tuboleta|tu boleta|eticket|ticketmaster|bar|discoteca|licorera|cerveceria|estanco|billar|bolos|parque|museo'],
+  // Servicios del hogar, celular, seguros
+  ['Servicios', 'epm|une|claro|tigo|movistar|wom|etb|emvarias|empresas publicas|aguas|acueducto|gas natural|vanti|efigas|enel|celsia|codensa|air e|soat|sura|seguros|allianz|bolivar|mapfre|colpatria seguros|arriendo|administracion|openai|chatgpt|anthropic|claude ai|microsoft|office|google one|google storage|icloud|dropbox|canva|adobe|notion'],
+  // Del negocio
+  ['Envíos', 'servientrega|interrapidisimo|inter rapidisimo|coordinadora|envia|tcc|deprisa|472|mensajeros urbanos|picap envios|domicilio envio'],
+  ['Comisiones', '4x1000|4 x 1000|gmf|cuota de manejo|comision|comisiones|iva comision'],
+  ['Publicidad', 'facebook ads|facebk|meta ads|meta platforms|instagram ads|tiktok ads|google ads']
 ];
-function mvComercio(t){ t = ' ' + mvNorm(t).replace(/[^a-z0-9& .]+/g, ' ') + ' '; const x = MV_COMERCIOS.find(([, re]) => re.test(t)); return x ? x[0] : ''; }
+/* Centros comerciales: monto pequeño = parqueadero; si no, compras */
+const CC_RE = /(^| )(centro comercial|c ?c|mall|plaza|premium plaza|santafe|santa fe|oviedo|el tesoro|tesoro|viva envigado|viva|unicentro|mayorca|los molinos|molinos|arkadia|florida|puerta del norte|fabricato|aventura|san diego|monterrey|el diamante|camino real|la strada|city plaza|vizcaya|parque la colina|nuestro bogota|andino|gran estacion|titan plaza|el retiro|santafe medellin)( |$)/;
+const COMERCIO_RE = COMERCIOS.map(([cat, palabras, nombre, max]) => ({cat, re: new RegExp('(^| )(' + palabras + ')( |$)'), nombre: nombre || null, max: max || null}));
+const mvNormCom = t => ' ' + mvNorm(t).replace(/[^a-z0-9& ]+/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+
+/* "RAPPI COLOMBIA*DL" → "Rappi" · "FRISBY Q58" → "Frisby" · "GOOGLE *PLAY YOUTUBE*D" → "YouTube (Google Play)" */
+function nombreComercio(raw){
+  let s = String(raw || '').replace(/\s+a\s+tu\s+(tarjeta|cuenta).*$/i, '').trim();
+  const n = mvNorm(s);
+  if(/youtube/.test(n)) return 'YouTube (Google Play)';
+  if(/google \*?play|google play/.test(n)) return 'Google Play';
+  if(/^rappi/.test(n)) return 'Rappi';
+  if(/^(didi|uber|netflix|spotify|disney|starbucks|frisby|kfc)/.test(n)) s = s.split(/[\s*]/)[0];
+  if(/^farm\b/.test(n)) s = s.replace(/^farm\b/i, 'Farmacia');
+  if(/^(eds)\b/.test(n)) s = s.replace(/^eds\b/i, 'EDS');
+  if(/centro comercial/.test(n)) s = s.replace(/centro comercial/i, 'C.C.');
+  s = s.replace(/\*.*$/, '')                                  // códigos de la pasarela: "*DL", "*D"
+       .replace(/\.(com|co|net)\b/gi, '')
+       .replace(/\b(colombia|col|sas|s a s|ltda|s a|bog|med|mde)\b\.?/gi, '')
+       .replace(/\s+/g, ' ').trim()
+       .split(' ').filter((w, i) => i === 0 || !/^[A-Za-z]\d{1,4}$/.test(w)).join(' ');   // código de sede "Q58" (no el "D1" del comienzo)
+  if(/c\.c\. los moli$/i.test(s)) s = 'C.C. Los Molinos';
+  return mvTitulo(s || String(raw || '').trim()).replace(/\bC\.c\./, 'C.C.').replace(/\bEds\b/, 'EDS');
+}
+
+/* ¿Es un comercio conocido? → {cat, nombre, tipo} o null (null = la app pregunta) */
+function comercioInfo(raw, monto){
+  const t = mvNormCom(raw);
+  if(!t.trim()) return null;
+  const negs = typeof NEG_CATS !== 'undefined' ? NEG_CATS : ['Envíos', 'Empaques', 'Comisiones', 'Publicidad'];
+  for(const c of COMERCIO_RE){
+    if(c.max && monto > c.max) continue;
+    if(c.re.test(t)) return {cat: c.cat, nombre: c.nombre || nombreComercio(raw), tipo: negs.includes(c.cat) ? 'negocio' : 'personal'};
+  }
+  if(CC_RE.test(t)){
+    const nom = nombreComercio(raw);
+    return +monto <= 15000 ? {cat: 'Transporte', nombre: 'Parqueadero ' + nom, tipo: 'personal'} : {cat: 'Personal', nombre: nom, tipo: 'personal'};
+  }
+  return null;
+}
+/* compatibilidad con lo anterior */
+function mvComercio(t, monto){ const x = comercioInfo(t, monto || 0); return x ? x.cat : ''; }
+
+/* patrones para el teléfono (Android los usa para anotar al instante, sin abrir la app) */
+function patronesComercio(){
+  return COMERCIOS.map(([cat, palabras, nombre, max]) => ({cat, re: '(^| )(' + palabras + ')( |$)', nombre: nombre || '', max: max || 0}))
+    .concat([{cat: 'Transporte', re: CC_RE.source, nombre: '', max: 15000, prefijo: 'Parqueadero '}, {cat: 'Personal', re: CC_RE.source, nombre: '', max: 0}]);
+}
 const mvLimpia = s => String(s || '').replace(/[|_*~•·»«>]+/g, ' ').replace(/\s+/g, ' ').trim();
 const mvTitulo = s => s.toLowerCase().replace(/(^|\s)(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
 
@@ -199,11 +265,13 @@ function clasificarMovs(db, movs, opts){
     // 3) salidas: categoría por el comercio / palabra
     const a = bolPorNombre(mv.desc);
     if(a && /^(para|a |envi|transferencia|recarga)/.test(td)){ r.accion = 'mover'; r.otro = a.id; r.porQue = 'a tu ' + a.nombre; return r; }
-    const cat = mvComercio(mv.desc) || gcat(mv.desc + ' ' + mv.quien);
+    const ci = comercioInfo(mv.quien || mv.desc, mv.monto) || comercioInfo(mv.desc, mv.monto);
+    if(ci){ r.accion = 'gasto'; r.cat = ci.cat; r.tipo = ci.tipo; r.desc2 = ci.nombre; return r; }
+    const cat = gcat(mv.desc + ' ' + mv.quien);
     if(cat !== 'Otro'){ r.accion = 'gasto'; r.cat = cat; r.tipo = negs.includes(cat) ? 'negocio' : 'personal'; r.desc2 = mv.quien || mv.desc; return r; }
     if(/^retiro|retiraste|cajero/.test(td) && bols.some(b => b.id === 'efectivo') && r.bolsillo !== 'efectivo'){ r.accion = 'mover'; r.otro = 'efectivo'; r.porQue = 'pasa a efectivo'; return r; }
     r.accion = 'pend'; r.porQue = mv.monto >= 300000 ? '¿compraste un equipo?' : '¿qué fue?'; return r;
   });
 }
 
-if(typeof module !== 'undefined') module.exports = {parseMovimientos, clasificarMovs, mvFecha, mvNum, mvYaEsta, mvSinBasura, mvComercio};
+if(typeof module !== 'undefined') module.exports = {parseMovimientos, clasificarMovs, mvFecha, mvNum, mvYaEsta, mvSinBasura, mvComercio, comercioInfo, nombreComercio, patronesComercio};

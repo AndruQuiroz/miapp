@@ -3089,28 +3089,85 @@ function bolsilloDePkg(pkg, texto){
   const banco = !/nequi/.test(t) && ps.find(p => !/nequi|efectivo/.test(p.id) && normKey(p.nombre).length > 3 && t.includes(normKey(p.nombre).split(' ')[0]));
   return (banco || ps.find(p => p.id === 'nequi') || ps[0] || {id: ''}).id;
 }
-/* trae lo que el teléfono capturó de Nequi y lo deja en "Por clasificar" (sin repetir) */
+/* ── Gastos automáticos (tarjeta Nequi por SMS, app de Nequi, bancos) ──
+   Compra en un comercio conocido y ≤ AUTO_LIMITE → se anota sola como gasto (con "No era eso" para deshacer).
+   Lo dudoso (personas, comercios desconocidos, montos grandes) → "Por clasificar". Reversos → deshacen la compra. */
+const AUTO_LIMITE = 300000;
+const MIN15 = 15 * 60000;
+const esCompraTexto = raw => /(pagaste|compraste|compra en|compra aprobada|pago en|pagos? con tu tarjeta)/i.test(raw) && !/(enviaste|transferiste|te envi)/i.test(raw);
+/* Pagar en un comercio ("Pagaste … en …") ES un gasto: siempre se anota solo. Conocido → su categoría; si no, "Otro".
+   Solo se pregunta si el mensaje habla de reverso / devolución / reembolso / anulación. */
+const DUDA_RE = /(revers|devol|reembols|anul|cancelad)/i;
+function autoGasto(x, raw, nativo){
+  if(!x || x.dir !== 'out' || x.reverso || DUDA_RE.test(raw) || !esCompraTexto(raw)) return null;
+  const r = x.quien ? L(DB, 'reglas').find(z => z.id === quienKey(x.quien) && z.kind === 'gasto') : null;   // lo que ya aprendió de ti
+  if(r) return {cat: r.cat || 'Otro', nombre: r.desc || nombreComercio(x.quien), tipo: r.tipo || 'personal'};
+  const ci = typeof comercioInfo === 'function' ? comercioInfo(x.quien, x.monto) : null;
+  if(ci) return ci;
+  const cat = nativo && nativo.cat ? nativo.cat : (guessGCat(x.quien || '') || 'Otro');
+  return {cat, nombre: nombreComercio(x.quien) || 'Pago', tipo: NEG_CATS.includes(cat) ? 'negocio' : 'personal'};
+}
+/* el mismo movimiento puede llegar 2 veces (SMS del 890806 + aviso de la app de Nequi) */
+function yaCapturado(x, t, nid){
+  const cerca = r => r.t && Math.abs((+r.t || 0) - t) < MIN15;
+  if(['gastos', 'pend', 'ingresos'].some(c => (DB[c] || []).some(r => r.nid === nid))) return true;
+  if(x.dir === 'in') return L(DB, 'ingresos').some(r => cerca(r) && +r.valor === x.monto) || L(DB, 'pend').some(r => cerca(r) && +r.monto === x.monto && r.dir === 'in');
+  return L(DB, 'gastos').some(r => cerca(r) && +r.valor === x.monto) || L(DB, 'pend').some(r => cerca(r) && +r.monto === x.monto && r.dir !== 'in');
+}
+const primeraPalabra = s => normKey(nombreComercio(s || '')).split(' ')[0] || '';
+/* reverso: quita la compra que se reversó; si no la encuentra, entra como ingreso */
+function aplicarReverso(x, t, fecha, bol, raw, nid){
+  const pp = primeraPalabra(x.quien), desde = shiftDate(fecha, -15);
+  const mismo = r => pp && (primeraPalabra(r.desc || r.quien || '') === pp || normKey(r.raw || '').includes(pp));
+  const g = L(DB, 'gastos').filter(r => +r.valor === x.monto && String(r.fecha || '') >= desde && String(r.fecha || '') <= fecha && mismo(r)).sort((a, b) => (+b.t || 0) - (+a.t || 0))[0];
+  if(g){ remove('gastos', g.id); return 'quitado'; }
+  const p = L(DB, 'pend').find(r => +r.monto === x.monto && r.dir !== 'in' && mismo(r));
+  if(p){ remove('pend', p.id); return 'quitado'; }
+  put('ingresos', {desc: 'Reverso ' + nombreComercio(x.quien), valor: x.monto, bolsillo: bol, fecha, nid, t, raw});
+  return 'ingreso';
+}
+/* trae lo que el teléfono capturó y lo registra (gasto solo) o lo deja en "Por clasificar" */
 function miappNativoSync(){
   if(!NATIVO || !DB) return 0;
-  let cola = [];
-  try { cola = JSON.parse(MiAppNativo.pendientes() || '[]'); } catch(e){ return 0; }
-  if(!cola.length) return 0;
-  const ids = [];
-  let n = 0;
+  let cola = [], rech = [];
+  try { cola = JSON.parse(MiAppNativo.pendientes() || '[]'); } catch(e){ cola = []; }
+  try { rech = MiAppNativo.rechazados ? JSON.parse(MiAppNativo.rechazados() || '[]') : []; } catch(e){ rech = []; }
+  if(!cola.length && !rech.length) return 0;
+  const ids = [], c = {auto: 0, pend: 0, rev: 0, no: 0};
   cola.forEach(it => {
     ids.push(it.id);
     const raw = String(it.texto || '').trim(), t = +it.t || Date.now();
     if(!raw) return;
-    const ya = L(DB, 'pend').some(p => p.nid === it.id || (p.raw === raw && Math.abs((+p.t || 0) - t) < 15 * 60000));
-    if(ya) return;
     const x = parseNoti(raw);
-    if(!x || !x.monto) return;
-    const d = new Date(t);
-    put('pend', {raw, monto: x.monto, dir: x.dir || '?', quien: x.quien || '', fecha: ymd(d), bolsillo: bolsilloDePkg(it.pkg, raw), t, nid: it.id, src: 'app'});
-    n++;
+    if(!x || !x.monto || yaCapturado(x, t, it.id)) return;
+    const fecha = ymd(new Date(t)), bol = bolsilloDePkg(it.pkg, raw);
+    // reverso / devolución / reembolso → no se adivina: queda para que él decida
+    const a = it.rechazado ? null : autoGasto(x, raw, it.auto);
+    if(a){
+      put('gastos', {desc: a.nombre, valor: x.monto, cat: a.cat, tipo: a.tipo, bolsillo: bol, fecha, nid: it.id, t, raw, auto: 1});
+      c.auto++;
+    } else {
+      put('pend', {raw, monto: x.monto, dir: x.dir || '?', quien: x.quien ? (esCompraTexto(raw) ? nombreComercio(x.quien) : x.quien) : '', fecha, bolsillo: bol, t, nid: it.id, src: 'app'});
+      c.pend++;
+    }
   });
-  try { MiAppNativo.confirmar(JSON.stringify(ids)); } catch(e){}
-  if(n){ console.log('[nativo] sync ' + n); commit(n === 1 ? '📲 Llegó 1 movimiento de Nequi' : '📲 Llegaron ' + n + ' movimientos de Nequi'); }
+  /* "No era eso" desde la notificación: el gasto automático vuelve a "Por clasificar" */
+  rech.forEach(nid => {
+    const g = L(DB, 'gastos').find(r => r.nid === nid);
+    if(!g) return;
+    remove('gastos', g.id);
+    if(!L(DB, 'pend').some(p => p.nid === nid + ':no')) put('pend', {raw: g.raw || g.desc, monto: g.valor, dir: 'out', quien: g.desc, fecha: g.fecha, bolsillo: g.bolsillo, t: g.t, nid: nid + ':no', src: 'app'});
+    c.no++;
+  });
+  try { if(ids.length) MiAppNativo.confirmar(JSON.stringify(ids)); } catch(e){}
+  try { if(rech.length && MiAppNativo.confirmarRechazos) MiAppNativo.confirmarRechazos(JSON.stringify(rech)); } catch(e){}
+  const n = c.auto + c.pend + c.rev + c.no;
+  if(n){
+    console.log('[nativo] sync ' + n + ' auto=' + c.auto + ' pend=' + c.pend + ' rev=' + c.rev + ' no=' + c.no);
+    const partes = [c.auto ? (c.auto === 1 ? '1 gasto anotado solo' : c.auto + ' gastos anotados solos') : '', c.pend ? c.pend + ' por clasificar' : '',
+      c.rev ? (c.rev === 1 ? '1 reverso' : c.rev + ' reversos') : '', c.no ? c.no + ' devuelto' + (c.no > 1 ? 's' : '') + ' a por clasificar' : ''].filter(Boolean);
+    commit('📲 ' + partes.join(' · '));
+  }
   return n;
 }
 /* eventos que llegan del teléfono: notificación tocada, botón de la cortina */
@@ -3144,7 +3201,9 @@ function nativoResumen(){
       vencidos: cp.filter(c => c.compromiso && c.compromiso <= t).length,
       cobros: cp.filter(c => c.compromiso).map(c => ({nombre: c.nombre, pend: c.pend, compromiso: c.compromiso})),
       ultimoRegistro: lastU > 1 ? lastU : 0, semana: summaryText(DB), extra, actualizado: Date.now(),
-      recDiario: CFG.recDiario !== false, recSemana: CFG.recSemana !== false, widgetPlata: CFG.widgetPlata !== false
+      recDiario: CFG.recDiario !== false, recSemana: CFG.recSemana !== false, widgetPlata: CFG.widgetPlata !== false,
+      auto: {limite: AUTO_LIMITE, patrones: typeof patronesComercio === 'function' ? patronesComercio() : [],
+        reglas: L(DB, 'reglas').filter(r => r.kind === 'gasto' && r.cat).map(r => ({k: r.id, cat: r.cat, nombre: r.desc || ''}))}
     }));
   } catch(e){ console.log('[nativo] resumen falló ' + e); }
 }
