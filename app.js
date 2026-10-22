@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '3.5.0';
+const APP_VERSION = '3.6.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -473,9 +473,11 @@ function pendCard(p){
     </div></div>`;
 }
 
-/* ── Stock ── */
+/* ── Equipos: En stock · Vendidos · Pedidos ── */
 function renderStock(){
   $$('#stSeg button').forEach(b => b.classList.toggle('on', b.dataset.seg === UI.stSeg));
+  const tools = $('#stTools'); if(tools) tools.hidden = UI.stSeg === 'pedidos';
+  if(UI.stSeg === 'pedidos'){ renderPedidos(); return; }
   const q = normKey(UI.stQ), qs = q ? q.split(' ') : [];
   const match = i => !qs.length || qs.every(w => normKey([i.desc, i.cat, i.notes].join(' ')).includes(w));
   const all = L(DB, 'items'), t = today();
@@ -539,6 +541,75 @@ function renderRefQuick(){
       <div class="val">${r.sugeridoVenta ? '~' + full(r.sugeridoVenta) : '—'}</div>
       <div class="sub">${esc(refLine(r))}${r.gananciaProm != null ? ' · ganas ~' + fmt(r.gananciaProm) : ''} · ver todo ›</div></button>`
     : `<p class="hint" style="margin:-4px 0 12px" data-testid="ref-quick-none">No has comprado ni vendido “${esc(q)}” todavía.</p>`;
+}
+
+/* ── Pedidos de clientes: "Fulano busca un 15 Pro" → aviso al comprar ese modelo ── */
+function renderPedidos(){
+  const ps = L(DB, 'pedidos').filter(p => p.estado !== 'cumplido').sort((a, b) => (+b.u || 0) - (+a.u || 0));
+  let h = `<button type="button" class="btn b-g full" data-a="form" data-k="pedido" data-testid="pedido-nuevo" style="margin-bottom:12px">+ Nuevo pedido</button>`;
+  if(!ps.length) h += emptyHTML('📝', 'Apunta lo que te piden tus clientes. Cuando compres ese modelo, te aviso quién lo estaba buscando.',
+    null, `<div class="btns"><button type="button" class="btn b-gh" data-a="form" data-k="pedido">+ Nuevo pedido</button></div>`);
+  h += ps.map(p => {
+    const disp = stockParaPedido(p);
+    return `<div class="it" data-testid="pedido" data-id="${esc(p.id)}"><div class="it-h"><div style="min-width:0"><div class="it-n">${esc(p.modelo)}</div>
+      <div class="it-tags"><span class="tag t-p">${esc(p.cliente || 'Cliente')}</span>${p.maxPrecio ? `<span class="tag t-n">hasta ${fmt(p.maxPrecio)}</span>` : ''}${p.tel ? `<span class="tag t-n">${esc(p.tel)}</span>` : ''}${disp.length ? `<span class="tag t-g">✓ tienes ${disp.length}</span>` : ''}</div></div></div>
+      ${p.notas ? `<div class="meta" style="margin-top:6px">${esc(p.notas)}</div>` : ''}
+      ${disp.length ? `<div class="meta pos" style="margin-top:6px">En stock: ${esc(disp.map(i => i.desc).slice(0, 3).join(', '))}</div>` : ''}
+      <div class="btns">${p.tel ? `<button type="button" class="btn b-wa" data-a="waPedido" data-id="${esc(p.id)}">💬 WhatsApp</button>` : ''}
+        <button type="button" class="btn b-g" data-a="pedidoCumplido" data-id="${esc(p.id)}" data-testid="pedido-ok">✓ Ya se lo vendí</button>
+        <button type="button" class="ibtn" data-a="editPedido" data-id="${esc(p.id)}" aria-label="Editar">✏️</button>
+        <button type="button" class="ibtn" data-a="delPedido" data-id="${esc(p.id)}" aria-label="Eliminar">🗑️</button></div></div>`;
+  }).join('');
+  $('#stockBody').innerHTML = h;
+}
+/* productos en stock que sirven para un pedido (mismo modelo y, si puso tope, dentro del presupuesto por tu precio sugerido) */
+function stockParaPedido(p){
+  const m = normModelo(p.modelo);
+  if(!m) return [];
+  return L(DB, 'items').filter(i => i.status !== 'sold' && normModelo(i.desc) === m);
+}
+/* al comprar un equipo: ¿alguien lo estaba buscando? */
+function avisoPedido(desc){
+  const m = normModelo(desc);
+  if(!m) return;
+  const ps = L(DB, 'pedidos').filter(p => p.estado !== 'cumplido' && normModelo(p.modelo) === m);
+  if(!ps.length) return;
+  const nombres = ps.map(p => p.cliente).filter(Boolean);
+  setTimeout(() => toast('📝 ' + (nombres.length ? nombres.join(', ') + (nombres.length === 1 ? ' lo estaba' : ' lo estaban') + ' buscando' : 'Tienes un pedido de este modelo') + '. Míralo en Equipos → Pedidos', {ms: 7000}), 700);
+}
+function waPedido(id){
+  const p = get('pedidos', id);
+  if(!p) return;
+  const n = waNumber(p.tel);
+  if(!n){ openForm('pedido', Object.assign({}, p)); return; }
+  const disp = stockParaPedido(p);
+  const msg = disp.length
+    ? `¡Hola ${p.cliente || ''}! Ya me llegó el ${p.modelo} que buscabas. ¿Lo quieres ver? 📱`
+    : `¡Hola ${p.cliente || ''}! Te aviso apenas me llegue el ${p.modelo} que buscabas. 👍`;
+  window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+}
+/* ── Calculadora de negociación (no registra nada: solo para decidir en la calle) ── */
+function openCalc(){
+  CALC = {compra: '', venta: '', parte: ''};
+  renderCalc();
+}
+let CALC = null;
+function renderCalc(){
+  const n = s => Math.round(+String(s == null ? '' : s).replace(/[^\d]/g, '')) || 0;
+  const c = n(CALC.compra), v = n(CALC.venta), pt = n(CALC.parte);
+  const gan = v > 0 && c > 0 ? v - c : null;
+  const margen = gan != null && c > 0 ? Math.round(gan / c * 100) : null;
+  const body = `<p class="hint" style="margin-bottom:10px">Solo para calcular; no guarda nada.</p>
+    <div class="fld"><label for="calc-compra">¿En cuánto te lo dejan? (lo que pagas)</label><input class="in" id="calc-compra" data-calc="compra" inputmode="numeric" placeholder="Ej: 2.100.000" value="${esc(CALC.compra)}"></div>
+    <div class="fld"><label for="calc-parte">Parte de pago que recibes (opcional)</label><input class="in" id="calc-parte" data-calc="parte" inputmode="numeric" placeholder="Valor del equipo que te dan" value="${esc(CALC.parte)}"></div>
+    <div class="fld"><label for="calc-venta">¿En cuánto crees que lo vendes?</label><input class="in" id="calc-venta" data-calc="venta" inputmode="numeric" placeholder="Ej: 2.500.000" value="${esc(CALC.venta)}"></div>
+    <div class="card ${gan == null ? 'a-b' : gan >= 0 ? 'a-g' : 'a-r'}" data-testid="calc-resultado" style="margin-top:6px">
+      <div class="lbl">${gan == null ? 'Tu ganancia' : gan >= 0 ? 'Ganarías' : 'Perderías'}</div>
+      <div class="val ${gan == null ? '' : gan >= 0 ? 'pos' : 'neg'}">${gan == null ? '—' : (gan >= 0 ? '' : '−') + full(Math.abs(gan))}</div>
+      <div class="sub">${c > 0 ? 'Pagas ' + full(c) : 'Pon cuánto pagas'}${pt > 0 ? ' (más un equipo de ' + full(pt) + ')' : ''}${margen != null ? ' · margen ' + margen + '%' : ''}</div></div>
+    ${pt > 0 ? `<p class="hint" style="margin-top:8px">Tu plata sale: ${full(Math.max(0, c))}. El equipo que recibes (${full(pt)}) lo revendes aparte.</p>` : ''}`;
+  openInfo({kind: 'calc'}, '🧮 ¿Me sirve el negocio?', body,
+    `<button type="button" class="btn b-gh" data-a="infoClose">Cerrar</button>`);
 }
 
 /* ── Movimientos ── */
@@ -1266,13 +1337,18 @@ function refQuery(){
   }
   return clean(v.desc);
 }
+const v_buy = () => (F && F.v ? F.v.buyPrice : 0) || 0;
 function updateRef(){
   if(!F || !F.fields.some(f => f.type === 'ref')) return;
   const box = $('#f-_ref'), q = refQuery(), r = q.length >= 2 ? priceRef(DB, q) : null;
   F.v._ref = r ? '1' : '';
   if(box){
     const use = F.kind === 'venta' ? ['sellPrice', 'Usar ' + (r && r.sugeridoVenta ? full(r.sugeridoVenta) : '')] : ['targetPrice', 'Usar como precio meta'];
-    box.innerHTML = r ? `<button type="button" class="refline" data-ref-toggle aria-expanded="false" data-testid="f-ref-line">📊 ${esc(refLine(r) || 'Ver referencia de ' + r.modelo)} <span aria-hidden="true">▾</span></button>
+    /* al comprar: con el precio que vas a pagar, cuánto te quedaría si lo vendes en lo de siempre */
+    const pago = F.kind === 'compra' ? num(v_buy()) : 0;
+    const gan = r && r.sugeridoVenta && pago > 0 ? r.sugeridoVenta - pago : null;
+    const ganH = gan == null ? '' : `<div class="hint" data-testid="f-ref-ganancia" style="margin:-4px 0 6px">Si lo vendes en ~${full(r.sugeridoVenta)}, te quedarían <b class="${gan >= 0 ? 'pos' : 'neg'}">${gan >= 0 ? '~' : '−'}${full(Math.abs(gan))}</b></div>`;
+    box.innerHTML = r ? ganH + `<button type="button" class="refline" data-ref-toggle aria-expanded="false" data-testid="f-ref-line">📊 ${esc(refLine(r) || 'Ver referencia de ' + r.modelo)} <span aria-hidden="true">▾</span></button>
       <div class="refdet" hidden data-testid="f-ref-det">${refStatsHTML(r)}${r.sugeridoVenta ? `<button type="button" class="btn b-b full" data-ref-use="${use[0]}" data-v="${r.sugeridoVenta}" data-testid="f-ref-usar">${esc(use[1])}</button>` : ''}</div>` : '';
   }
   refreshShow();
@@ -1304,7 +1380,7 @@ function onField(k){
   if(!F) return;
   F.touched[k] = true;
   if(F.spec.change) F.spec.change(k, F.v, setVal, F);
-  if(k === 'desc' || k === 'itemId') updateRef();
+  if(k === 'desc' || k === 'itemId' || k === 'buyPrice') updateRef();
   if(k !== 'fondo' && 'fondo' in F.v && !F.touched.fondo && !F.fondoFixed){ const a = fondoAuto(F.kind, F.v, F.d); if(a !== F.v.fondo) setVal('fondo', a); }
   refreshShow();
 }
@@ -1530,7 +1606,37 @@ const FORMS = {
       const rec = put('items', withFondo(Object.assign({desc, cat: v.cat || guessCat(desc), cond: v.cond || 'bueno', notes: clean(v.notes), buyPrice: p, buyPocket: v.buyPocket || '',
         buyDate: v.buyDate || today(), targetPrice: num(v.targetPrice) || null, status: 'stock'}, equipoDe(v),
         prov.nombre ? {proveedor: prov.nombre} : {}, prov.id ? {proveedorId: prov.id} : {}), fondoPick(v, d, Fx)));
+      avisoPedido(desc);
       return {rec, msg: `📦 ${desc} en stock · ${full(p)}`};
+    }
+  },
+
+  /* Pedido de un cliente: qué modelo busca, para avisarte al comprarlo */
+  pedido: {
+    title: d => d.id ? '✏️ Editar pedido' : '📝 Pedido de cliente',
+    prep: d => { if(!d.cliente && d.nombre) d.cliente = d.nombre; },
+    intro: () => '<p class="hint" style="margin-bottom:10px">Apunta qué modelo te pidieron. Cuando compres ese modelo, te aviso quién lo buscaba.</p>',
+    fields: () => [
+      {k: 'modelo', label: '¿Qué busca?', type: 'text', req: 1, ph: 'Ej: iPhone 15 Pro 256'},
+      {k: 'cliente', label: '¿Quién?', type: 'text', cap: 'words', ph: 'Ej: Mateo Ríos'},
+      {k: 'tel', label: 'Celular (para WhatsApp, opcional)', type: 'tel'},
+      {k: 'maxPrecio', label: 'Hasta cuánto paga (opcional)', type: 'money', ph: '¿Su presupuesto?'},
+      {k: 'notas', label: 'Notas (opcional)', type: 'text', ph: 'Color, detalles…'}
+    ],
+    save: (v, d) => {
+      const modelo = clean(v.modelo);
+      if(!modelo) return {err: '¿Qué modelo busca?', k: 'modelo'};
+      if(clean(v.tel) && !waNumber(v.tel)) return {err: 'Ese celular no parece válido (10 dígitos, empieza por 3)', k: 'tel'};
+      const base = d.id ? get('pedidos', d.id) || {} : {};
+      const rec = put('pedidos', Object.assign({}, base, {id: d.id, modelo, cliente: titleCase(clean(v.cliente)), tel: clean(v.tel),
+        maxPrecio: num(v.maxPrecio) || null, notas: clean(v.notas), estado: base.estado === 'cumplido' ? '' : (base.estado || ''), fecha: base.fecha || today()}));
+      return {rec, msg: (d.id ? '✓ Pedido actualizado' : '📝 Pedido guardado') + (rec.cliente ? ' · ' + rec.cliente : '')};
+    },
+    del: (v, d) => {
+      const p = get('pedidos', d.id);
+      if(!p) return null;
+      remove('pedidos', p.id);
+      return {msg: '🗑️ Pedido eliminado', undo: () => { restore('pedidos', p); commit('Recuperado ✓'); }};
     }
   },
 
@@ -2248,6 +2354,11 @@ const ACT = {
   ex: el => { const q = $('#qInput'); q.value = el.dataset.t; q.focus(); toast('Cámbialo a tu gusto y toca ➤'); },
   goAjustes: () => { UI.masSeg = 'ajustes'; setView('mas'); },
   goStock: () => { UI.stSeg = 'stock'; setView('stock'); },
+  waPedido: el => waPedido(el.dataset.id),
+  editPedido: el => { const p = get('pedidos', el.dataset.id); if(p) openForm('pedido', Object.assign({}, p)); },
+  pedidoCumplido: el => { const p = get('pedidos', el.dataset.id); if(!p) return; put('pedidos', Object.assign({}, p, {estado: 'cumplido'})); commit('✓ Pedido de ' + (p.cliente || p.modelo) + ' cumplido'); },
+  delPedido: el => { const p = get('pedidos', el.dataset.id); if(!p || !confirm('¿Eliminar el pedido de ' + (p.cliente || p.modelo) + '?')) return; remove('pedidos', p.id); commit('🗑️ Pedido eliminado', {undo: () => { restore('pedidos', p); commit('Recuperado ✓'); }}); },
+  calculadora: () => openCalc(),
   goCobros: () => { UI.plataSeg = 'deben'; setView('movs'); },
   plataSeg: el => { UI.plataSeg = el.dataset.seg; renderPlata(); },
   goMovs: () => setView('movs'),
@@ -2597,6 +2708,16 @@ document.addEventListener('input', e => {
   else if(t.dataset && t.dataset.lp != null){ LISTA.precios[t.dataset.lp] = parseMoney(t.value); const btn = $('#listaSave'); if(btn){ const miss = listaFalta(parseLista(LISTA.texto, quickCtx())); btn.classList.toggle('dim', !!miss); } }
 });
 document.addEventListener('change', e => { if(LISTA && e.target && e.target.dataset && e.target.dataset.lp != null) renderListaPrev(); });
+/* calculadora de negociación: recalcula en vivo sin perder el foco */
+document.addEventListener('input', e => {
+  const t = e.target;
+  if(CALC && INFO && INFO.kind === 'calc' && t && t.dataset && t.dataset.calc){
+    CALC[t.dataset.calc] = t.value;
+    const foco = t.dataset.calc, pos = t.selectionStart;
+    renderCalc();
+    const n = $('#calc-' + foco); if(n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch(x){} }
+  }
+});
 
 /* ═════════ 4. REGISTRO RÁPIDO Y VOZ ═════════ */
 const quickCtx = () => ({

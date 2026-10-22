@@ -2,7 +2,7 @@
    core.js — lógica compartida entre la app y Google Apps Script
    (sin DOM: funciona en el navegador y en el servidor)
 ═══════════════════════════════════════════════ */
-const COLS = ['items','gastos','ingresos','cobros','abonos','transfers','ajustes','pend','bolsillos','reglas','fondos','repartos','contactos','topes'];
+const COLS = ['items','gastos','ingresos','cobros','abonos','transfers','ajustes','pend','bolsillos','reglas','fondos','repartos','contactos','topes','pedidos'];
 
 /* ── Semillas: mismo id y u:1 en todos los dispositivos → nunca se duplican al sincronizar ──
    Bolsillo = DÓNDE está la plata. Apartado (fondos) = PARA QUÉ es la plata (SPEC §13). */
