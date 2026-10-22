@@ -159,6 +159,8 @@ button.card{width:100%;font:inherit;color:inherit}
 .ramt small{display:block;font-size:10.5px;font-weight:500;color:var(--ink3)}
 .tot{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
 .tot .card{padding:10px 11px}.tot .val{font-size:16px}
+body.discreto .plata{filter:blur(7px);user-select:none}
+body.discreto canvas{filter:blur(10px)}
 .dia-h{display:flex;align-items:center;gap:8px;margin:14px 2px 6px;font-size:13px;font-weight:700;color:var(--mut,#9aa7b4);text-transform:uppercase;letter-spacing:.03em}
 .dia-h::after{content:"";flex:1;height:1px;background:var(--line,rgba(127,127,127,.18))}
 .dia-h:first-child{margin-top:4px}
@@ -337,7 +339,7 @@ input.in.mono{font-family:var(--mono);letter-spacing:.02em}
 
 /* ── Navegación inferior ── */
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(13,17,23,.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--bdr);padding-bottom:var(--safe)}
-.tabs-in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
+.tabs-in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
 .tab{position:relative;height:var(--nav);border:none;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--ink3);font-size:11px;font-weight:600}
 .tab span{font-size:21px;line-height:1;filter:grayscale(1) opacity(.6);transition:.15s}
 .tab.on{color:var(--ink)}
@@ -369,6 +371,7 @@ body:has(.wrap input:focus) .tabs{display:none}
   <div class="top-in">
     <div class="logo" aria-hidden="true">$</div>
     <div class="brand"><b>Mi App</b><small id="hdrDate"></small></div>
+    <button class="hbtn" id="discretoBtn" data-a="discreto" data-testid="discreto" type="button" aria-label="Ocultar los montos" aria-pressed="false">👁️</button>
     <button class="hbtn" data-a="asisAbrir" data-testid="asis-abrir" type="button" aria-label="Háblale a tu app">💬</button>
     <button class="sync s-off" id="syncBtn" data-testid="sync" type="button">Sin nube</button>
   </div>

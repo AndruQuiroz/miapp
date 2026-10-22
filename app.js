@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '3.4.0';
+const APP_VERSION = '3.5.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -281,6 +281,10 @@ const money = (m, amt) => m == null || m === 0
 const emptyHTML = (ico, txt, ejemplos, btn) => `<div class="empty"><div class="e">${ico}</div><p>${txt}</p>${
   (ejemplos || []).map(e => `<code>${esc(e)}</code>`).join('')}${btn || ''}</div>`;
 
+/* Ícono por categoría de gasto (historial) */
+const CAT_ICO = {'Comida': '🍔', 'Transporte': '⛽', 'Servicios': '💡', 'Entretenimiento': '🎬', 'Personal': '🛍️', 'Envíos': '📦',
+  'Empaques': '📦', 'Comisiones': '🏦', 'Publicidad': '📣', 'Mantenimiento': '🔧', 'Otro': '💸'};
+
 /* Todos los movimientos de plata en filas (Inicio y Movimientos) */
 function movs(){
   const rows = [];
@@ -299,7 +303,7 @@ function movs(){
     }
   });
   const itDesc = id => { const x = (DB.items || []).find(i => i.id === id); return x ? x.desc : ''; };
-  L(DB, 'gastos').forEach(g => rows.push({col: 'gastos', id: g.id, ico: g.itemId ? '🔧' : g.tipo === 'negocio' ? '🏢' : '👤', t: g.desc || g.cat || 'Gasto', extra: g.itemId ? 'de ' + itDesc(g.itemId) : '',
+  L(DB, 'gastos').forEach(g => rows.push({col: 'gastos', id: g.id, ico: g.itemId ? '🔧' : CAT_ICO[g.cat] || (g.tipo === 'negocio' ? '🏢' : '💸'), t: g.desc || g.cat || 'Gasto', extra: g.itemId ? 'de ' + itDesc(g.itemId) : '',
     s: (g.tipo === 'negocio' ? 'Negocio' : 'Personal') + ' · ' + (g.cat || 'Otro'), f: g.tipo === 'negocio' ? 'negocio' : 'personal', fecha: g.fecha, u: g.u, m: -(+g.valor || 0), pocket: g.bolsillo}));
   L(DB, 'ingresos').forEach(g => rows.push({col: 'ingresos', id: g.id, ico: '➕', t: g.desc || 'Ingreso', s: 'Ingreso', f: 'personal', fecha: g.fecha, u: g.u, m: +g.valor || 0, pocket: g.bolsillo}));
   L(DB, 'abonos').forEach(a => { const c = cob[a.cobroId];
@@ -3307,6 +3311,58 @@ Object.assign(ACT, {
   andProbar: () => { try { MiAppNativo.probar(); toast('📲 Mandé un movimiento de prueba de $1.000: mira la notificación arriba', {ms: 5000}); setTimeout(() => miappNativoSync(), 1200); } catch(e){ toast('No pude probar', {err: true}); } }
 });
 
+
+/* ═════════ MODO DISCRETO: un toque y los montos se ven borrosos (para mostrar la pantalla a un cliente) ═════════
+   Cualquier monto que aparezca en pantalla ("$1.600.000", "+$35.500", "$6.8M") se envuelve en <span class="plata">;
+   el CSS los difumina solo cuando el cuerpo tiene la clase "discreto". */
+const PLATA_RE = /[−+\-]?\s?\$\s?\d[\d.,]*(?:\s?[KkMm](?![A-Za-zÁÉÍÓÚáéíóúñÑ]))?/g;
+const SALTAR = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'OPTION', 'SELECT', 'INPUT', 'CODE']);
+function marcarPlata(raiz){
+  if(!raiz || typeof document === 'undefined' || !document.createTreeWalker) return;
+  const w = document.createTreeWalker(raiz, 4 /* NodeFilter.SHOW_TEXT */, null);
+  const nodos = [];
+  let n;
+  while((n = w.nextNode())){
+    const p = n.parentNode;
+    if(!p || SALTAR.has(p.nodeName) || (p.classList && p.classList.contains('plata'))) continue;
+    PLATA_RE.lastIndex = 0;
+    if(PLATA_RE.test(n.nodeValue)) nodos.push(n);
+  }
+  nodos.forEach(t => {
+    const txt = t.nodeValue, frag = document.createDocumentFragment();
+    let ult = 0, m;
+    PLATA_RE.lastIndex = 0;
+    while((m = PLATA_RE.exec(txt))){
+      if(m.index > ult) frag.appendChild(document.createTextNode(txt.slice(ult, m.index)));
+      const sp = document.createElement('span'); sp.className = 'plata'; sp.textContent = m[0];
+      frag.appendChild(sp);
+      ult = m.index + m[0].length;
+    }
+    if(ult < txt.length) frag.appendChild(document.createTextNode(txt.slice(ult)));
+    if(t.parentNode) t.parentNode.replaceChild(frag, t);
+  });
+}
+function iniciarDiscreto(){
+  if(typeof MutationObserver === 'undefined' || typeof document === 'undefined') return;
+  aplicarDiscreto();
+  marcarPlata(document.body);
+  let pendiente = false;
+  new MutationObserver(() => {
+    if(pendiente) return;
+    pendiente = true;
+    const fn = () => { pendiente = false; marcarPlata(document.body); };
+    if(typeof requestAnimationFrame === 'function') requestAnimationFrame(fn); else setTimeout(fn, 0);
+  }).observe(document.body, {childList: true, subtree: true, characterData: true});
+}
+function aplicarDiscreto(){
+  document.body.classList.toggle('discreto', !!CFG.discreto);
+  const b = $('#discretoBtn');
+  if(b){ b.textContent = CFG.discreto ? '🙈' : '👁️'; b.setAttribute('aria-pressed', CFG.discreto ? 'true' : 'false'); b.title = CFG.discreto ? 'Mostrar los montos' : 'Ocultar los montos'; }
+}
+Object.assign(ACT, {
+  discreto: () => { CFG.discreto = !CFG.discreto; saveCfg(); aplicarDiscreto(); toast(CFG.discreto ? '🙈 Montos ocultos' : '👁️ Montos visibles'); }
+});
+
 /* ═════════ 5. AJUSTES, RESPALDO Y BIENVENIDA ═════════ */
 function renderAjustes(){
   const u = $('#cfgUrl'), k = $('#cfgKey');
@@ -3644,6 +3700,7 @@ function init(){
   const v0 = qs.get('v'), voz = qs.get('voz') === '1', noti = qs.get('noti') || '', bolQ = qs.get('bol') || '', qDirect = qs.get('q') || '';
   if(v0 || voz || noti || qDirect){ try { history.replaceState(null, '', location.pathname); } catch(e){} }
   setView(v0 === 'cobros' || VIEWS.includes(v0) ? v0 : 'inicio');
+  iniciarDiscreto();
   registerSW();
 
   const first = hasCloud() ? sync() : Promise.resolve(false);
