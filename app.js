@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '3.6.0';
+const APP_VERSION = '3.7.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -1023,7 +1023,8 @@ function fichaHTML(h){
       : '';
     if(!it.del) b += `<div class="pbtns" style="margin-top:8px"><button type="button" class="btn b-gh" data-a="verifImei" data-id="${esc(it.id)}" data-testid="verif-imei">🔍 Verificar IMEI${it.imeiVerif ? ' otra vez' : ''}</button></div>`;
   }
-  if(!it.del) b += `<button type="button" class="btn b-b full" style="margin-top:8px" data-a="ocrFicha" data-id="${esc(it.id)}" data-testid="ocr-ficha">📷 Leer datos de una foto / reporte 3uTools</button>`;
+  if(!it.del) b += `<div class="pbtns" style="margin-top:8px"><button type="button" class="btn b-b" data-a="ocrFicha" data-id="${esc(it.id)}" data-testid="ocr-ficha">📷 Leer foto / 3uTools</button>
+    ${it.status !== 'sold' ? `<button type="button" class="btn b-b" data-a="publicar" data-id="${esc(it.id)}" data-testid="publicar">📣 Texto para publicar</button>` : ''}</div>`;
   const ct = [['Se lo compraste a', h.proveedor, it.proveedorId], ['Se lo vendiste a', h.venta && h.venta.cliente, it.clienteId]].filter(x => x[1]);
   if(ct.length) b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Contactos</span></div>` + ct.map(([l, n, id]) =>
     `<div class="kvline"><span>${l}</span>${id && get('contactos', id) ? `<button type="button" class="lnk" data-a="goContacto" data-id="${esc(id)}">${esc(n)}</button>` : `<b>${esc(n)}</b>`}</div>`).join('');
@@ -1078,6 +1079,38 @@ function openRef(q){
   const r = priceRef(DB, q);
   if(!r) return toast('No tengo datos de “' + q + '” todavía', {err: true});
   openInfo({kind: 'ref', q}, '📊 ¿Cuánto vale?', refHTML(r));
+}
+
+/* ── Texto para publicar (Marketplace/estados) con variaciones, para que no lo marquen como repetido ── */
+const al = arr => arr[Math.floor(Math.random() * arr.length)];
+function textoPublicar(it){
+  const precio = +it.targetPrice || (priceRef(DB, it) || {}).sugeridoVenta || 0;
+  const cond = {nuevo: ['nuevo', 'sin usar', 'de paquete'], bueno: ['en excelente estado', 'como nuevo', 'impecable', '10/10'], regular: ['en buen estado', 'con detalles mínimos']}[it.cond || 'bueno'] || ['en buen estado'];
+  const saludo = al(['', '🔥 ', '📱 ', '✨ ', '¡Disponible! ', 'Se vende ', 'En venta ']);
+  const tras = [];
+  if(it.bateria != null && it.bateria !== '') tras.push(al(['batería ' + it.bateria + '%', 'salud de batería ' + it.bateria + '%', '🔋 ' + it.bateria + '%']));
+  if(it.ciclos != null && it.ciclos !== '') tras.push(it.ciclos + ' ciclos');
+  if(it.imei) tras.push(al(['IMEI original', 'IMEI limpio', 'IMEI verificado']));
+  tras.push(al(cond));
+  const pzs = tras.slice();
+  for(let i = pzs.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [pzs[i], pzs[j]] = [pzs[j], pzs[i]]; }   // orden distinto cada vez
+  const sep = al([' · ', ' | ', ', ', ' — ']);
+  const cuerpo = pzs.join(sep);
+  const precioTxt = precio ? al(['\n💰 ' + full(precio), '\nPrecio: ' + full(precio), '\n' + full(precio) + (Math.random() < .5 ? ' negociables' : ''), '\n👉 ' + full(precio)]) : '';
+  const ciudad = CFG.ciudad ? '\n📍 ' + CFG.ciudad : '\n📍 Medellín';
+  const cierre = al(['\nEscríbeme al WhatsApp 👇', '\n¡Escríbeme! 📲', '\nInteresados al DM o WhatsApp', '\nEntrega personal o envío a todo el país 🚚', '\nAcepto parte de pago 🔄']);
+  return (saludo + it.desc + (cuerpo ? '\n' + cuerpo : '') + precioTxt + ciudad + cierre).trim();
+}
+function openPublicar(id){
+  const it = get('items', id);
+  if(!it) return;
+  const txt = textoPublicar(it);
+  const body = `<p class="hint" style="margin-bottom:10px">Cópialo para Marketplace o tus estados. Cada vez sale distinto, para que no lo marquen como repetido.</p>
+    <textarea class="in" id="pubTxt" data-testid="pub-texto" rows="8" style="font-size:15px">${esc(txt)}</textarea>
+    ${!it.targetPrice && !((priceRef(DB, it) || {}).sugeridoVenta) ? '<p class="hint" style="margin-top:8px">💡 Ponle un precio meta al equipo (✏️ Editar) y aparece solo en el texto.</p>' : ''}`;
+  openInfo({kind: 'pub', id}, '📣 Publicar ' + it.desc, body,
+    `<button type="button" class="btn b-gh" data-a="publicar" data-id="${esc(id)}" data-testid="pub-otra">🔄 Otra versión</button>
+     <button type="button" class="btn b-g" data-a="pubCopiar" data-testid="pub-copiar">📋 Copiar</button>`);
 }
 
 /* ── Ronda 6: leer IMEI, batería y almacenamiento de un pantallazo (OCR en el celular, app/ocr.js) ── */
@@ -2355,6 +2388,8 @@ const ACT = {
   goAjustes: () => { UI.masSeg = 'ajustes'; setView('mas'); },
   goStock: () => { UI.stSeg = 'stock'; setView('stock'); },
   waPedido: el => waPedido(el.dataset.id),
+  publicar: el => openPublicar(el.dataset.id),
+  pubCopiar: () => { const t = $('#pubTxt'); if(t) copyText(t.value, 'el texto'); },
   editPedido: el => { const p = get('pedidos', el.dataset.id); if(p) openForm('pedido', Object.assign({}, p)); },
   pedidoCumplido: el => { const p = get('pedidos', el.dataset.id); if(!p) return; put('pedidos', Object.assign({}, p, {estado: 'cumplido'})); commit('✓ Pedido de ' + (p.cliente || p.modelo) + ' cumplido'); },
   delPedido: el => { const p = get('pedidos', el.dataset.id); if(!p || !confirm('¿Eliminar el pedido de ' + (p.cliente || p.modelo) + '?')) return; remove('pedidos', p.id); commit('🗑️ Pedido eliminado', {undo: () => { restore('pedidos', p); commit('Recuperado ✓'); }}); },
