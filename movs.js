@@ -66,32 +66,35 @@ const mvSinBasura = s => String(s || '').replace(/^\s*[^\p{L}\p{N}\s]{0,2}\s*[Oo
    Va en orden: lo más específico primero. Las palabras se buscan como palabras completas. */
 const COMERCIOS = [
   // Gasolina, parqueaderos, peajes, transporte
-  ['Transporte', 'eds|distracom|estacion de servicio|estacion servicio|terpel|primax|biomax|texaco|mobil|esso|zeuss|petromil|brio|puma energy|gulf|gasolinera|combustible|octanaje'],
-  ['Transporte', 'parqueadero|parqueaderos|parking|city parking|parkeo|parqueo|zona azul'],
-  ['Transporte', 'peaje|peajes|devimed|tunel de oriente|autopistas|concesion|flypass'],
-  ['Transporte', 'uber|didi|indrive|indriver|cabify|picap|bolt|beat|taxi|taxis libres|civica|metro de medellin|metroplus|encicla|transmilenio|terminal de transporte|avianca|latam|viva air|wingo|clic air|satena'],
+  ['Transporte', 'eds|distracom|estacion de servicio|estacion servicio|terpel|primax|biomax|texaco|mobil|esso|zeuss|petromil|brio|puma energy|gulf|octano|gazel|gnv|petrobras|chevron|petromax|biocombustibles|gasolinera|combustible|octanaje'],
+  ['Transporte', 'parqueadero|parqueaderos|parking|city parking|parkeo|parqueo|zona azul|parquee|aparcar|valet'],
+  ['Transporte', 'peaje|peajes|devimed|tunel de oriente|tunel de occidente|autopistas|concesion|flypass|facilpass'],
+  ['Transporte', 'uber|didi|indrive|indriver|cabify|picap|bolt|beat|taxi|taxis libres|taxi individual|civica|tarjeta civica|metro de medellin|metroplus|metrocable|encicla|tranvia|transmilenio|terminal de transporte|terminal del norte|terminal del sur|avianca|latam|viva air|wingo|clic air|satena|easyfly|ryanair|flota|expreso|rapido ochoa'],
   // Domicilios y comida
-  ['Comida', 'rappi|ifood|didi food|domicilios com|mercadoni|merqueo|turbo', null, null],
-  ['Comida', 'mcdonalds|mc donalds|mcdonald s|kfc|frisby|el corral|corral|burger king|subway|dominos|domino s|papa johns|pizza hut|jenos|jeno s|presto|crepes|crepes waffles|wok|sr wok|archies|kokoriko|la brasa roja|qbano|sandwich qbano|buffalo wings|hooters|el rodeo|dlk|tacos|taco bell|chipotle|popeyes|wendys|wendy s|carls jr|frisby|hamburguesas|el pirata|la cosecha|mondongos|hatsu|sushi|pizza|pizzeria|restaurante|rest |asadero|cafeteria|comidas rapidas|perros|salchipapa'],
-  ['Comida', 'starbucks|juan valdez|tostao|oma|dunkin|krispy kreme|pan pa ya|panaderia|pasteleria|reposteria|helados|popsy|mimos|crepes|cafe|coffee|la ricura|cheesecake|postres|dulceria'],
-  ['Comida', 'd1|tiendas d1|ara|jeronimo martins|exito|almacenes exito|carulla|jumbo|olimpica|makro|pricesmart|euro supermercados|la vaquita|consumo|colsubsidio mercado|isimo|surtimax|super inter|superinter|oxxo|justo y bueno|mercamas|merkepaisa|supermercado|minimercado|autoservicio|fruver|carniceria|tienda'],
+  ['Comida', 'rappi|ifood|didi food|domicilios com|mercadoni|merqueo|turbo|robin food|hugo app'],
+  ['Comida', 'mcdonalds|mc donalds|mcdonald s|kfc|frisby|el corral|corral|burger king|subway|dominos|domino s|papa johns|pizza hut|jenos|jeno s|presto|crepes|crepes waffles|wok|sr wok|archies|kokoriko|la brasa roja|qbano|sandwich qbano|buffalo wings|hooters|el rodeo|dlk|tacos|taco bell|chipotle|popeyes|wendys|wendy s|carls jr|hamburguesas|el pirata|la cosecha|mondongos|mondongo|hatsu|sushi|pizza|pizzeria|restaurante|rest |asadero|cafeteria|comidas rapidas|perros|salchipapa|sandwich cubano|juanchito|frutos|tienda de cafe'],
+  // Restaurantes y cafés reconocidos de Medellín
+  ['Comida', 'el rancherito|hacienda|hato viejo|salon versalles|versalles|la aguacatala|mundo verde|in situ|carmen|el cielo|herbario|oci mde|ocio|al alma|pergamino|velvet|betty|reny|la provincia|il forno|la causa|naan|burdo|x o|cuon|rumi|malanga|mistura|barbacoa|la matriz|sambombi|delaire|carmen alto|montana|cerro verde|la octava|zorba|el tranvia|crepes waffles|dulce lorena'],
+  // Panaderías y heladerías de Medellín
+  ['Comida', 'starbucks|juan valdez|tostao|oma|dunkin|krispy kreme|pan pa ya|panaderia|pasteleria|reposteria|helados|popsy|mimos|crepes|cafe|coffee|la ricura|cheesecake|postres|dulceria|santa elena|la americana|levain|masa|salvatore|montpellier|eucalipto|la bastilla|mazi|fiori|crem helado|mcflurry|yogen fruz|cosechas|ch:a'],
+  ['Comida', 'd1|tiendas d1|ara|jeronimo martins|exito|almacenes exito|carulla|jumbo|olimpica|makro|pricesmart|euro supermercados|euro|zapatoca|la vaquita|consumo|colsubsidio mercado|isimo|surtimax|super inter|superinter|oxxo|justo y bueno|mercamas|merkepaisa|canasta|pomona|placita de florez|placita|mercado del rio|cootrafa|la 33|supermercado|minimercado|autoservicio|fruver|verduleria|carniceria|granero|tienda'],
   // Salud y cuidado personal
-  ['Personal', 'farmatodo|cruz verde|drogueria|droguerias|drogas|farmacia|farm|la rebaja|pasteur|locatel|colsubsidio drogueria|alemana|farmacenter|optica|opticas|odontologia|laboratorio|clinica|hospital'],
-  ['Personal', 'barberia|barber|peluqueria|spa|unas|nails|smart fit|smartfit|bodytech|spinning|gimnasio|gym'],
+  ['Personal', 'farmatodo|cruz verde|drogueria|droguerias|drogas|farmacia|farm|la rebaja|pasteur|locatel|colsubsidio drogueria|alemana|farmacenter|cafam|audifarma|droxi|inpa|copservir|farmacias pasteur|optica|opticas|gmo|opticas colombianas|odontologia|laboratorio|dinamica|synlab|clinica|hospital|ips|eps|sura eps|coomeva|nueva eps'],
+  ['Personal', 'barberia|barber|peluqueria|spa|unas|nails|smart fit|smartfit|bodytech|spinning|gimnasio|gym|stadium|fitpal|crossfit|montana studio|hard body'],
   // Ropa, tiendas, tecnología, hogar
-  ['Personal', 'falabella|arturo calle|koaj|studio f|zara|h m|pull and bear|pull bear|bershka|stradivarius|mango|tennis|velez|totto|adidas|nike|new balance|gef|punto blanco|offcorss|americanino|chevignon|diesel|levis|levi s|quest|seven seven|ela|patprimo|mattelsa|bosi|spring step|payless|aldo|skechers|crocs|under armour|lacoste|tommy|polo'],
-  ['Personal', 'miniso|flying tiger|dollarcity|dolarcity|homecenter|home center|ikea|panamericana|alkosto|ktronix|tecnoplaza|jumbo home|easy|ferreteria|tauro|mercado libre|mercadolibre|amazon|temu|shein|aliexpress'],
+  ['Personal', 'falabella|arturo calle|koaj|studio f|zara|h m|pull and bear|pull bear|bershka|stradivarius|mango|tennis|velez|totto|adidas|nike|new balance|gef|punto blanco|offcorss|americanino|chevignon|diesel|levis|levi s|quest|seven seven|ela|patprimo|mattelsa|bosi|spring step|payless|aldo|skechers|crocs|under armour|lacoste|tommy|polo|naf naf|esprit|facol|bata|croydon|vans|converse|puma|reebok|forever 21|pilatos|americanino|tennis clothing|leonisa|gef|baby fresh|epk|gzeus|rifle'],
+  ['Personal', 'miniso|flying tiger|dollarcity|dolarcity|dollar city|homecenter|home center|ikea|panamericana|alkosto|ktronix|tecnoplaza|mac center|ishop|jumbo home|easy|constructor|corona|ferreteria|tauro|el palacio|mercado libre|mercadolibre|amazon|temu|shein|aliexpress|exito com|falabella com'],
   // Suscripciones y entretenimiento
-  ['Entretenimiento', 'netflix|spotify|disney|hbo|max com|prime video|amazon prime|youtube|google play|apple com|itunes|steam|playstation|xbox|nintendo|crunchyroll|paramount|star plus|deezer|twitch|cine colombia|cinecolombia|cinemark|procinal|royal films|tuboleta|tu boleta|eticket|ticketmaster|bar|discoteca|licorera|cerveceria|estanco|billar|bolos|parque|museo'],
+  ['Entretenimiento', 'netflix|spotify|disney|hbo|max com|prime video|amazon prime|youtube|google play|apple com|itunes|steam|playstation|xbox|nintendo|crunchyroll|paramount|star plus|deezer|twitch|discord|cine colombia|cinecolombia|cinemark|procinal|royal films|cinepolis|tuboleta|tu boleta|eticket|ticketmaster|palco4|bar|discoteca|licorera|cerveceria|estanco|billar|bolos|parque arvi|parque explora|parque norte|museo|teatro|salitre magico'],
   // Servicios del hogar, celular, seguros
-  ['Servicios', 'epm|une|claro|tigo|movistar|wom|etb|emvarias|empresas publicas|aguas|acueducto|gas natural|vanti|efigas|enel|celsia|codensa|air e|soat|sura|seguros|allianz|bolivar|mapfre|colpatria seguros|arriendo|administracion|openai|chatgpt|anthropic|claude ai|microsoft|office|google one|google storage|icloud|dropbox|canva|adobe|notion'],
+  ['Servicios', 'epm|une|claro|tigo|movistar|wom|etb|emvarias|empresas publicas|aguas|acueducto|gas natural|vanti|efigas|enel|celsia|codensa|air e|soat|sura|seguros|allianz|bolivar|mapfre|colpatria seguros|arriendo|administracion|openai|chatgpt|anthropic|claude ai|microsoft|office|google one|google storage|icloud|dropbox|canva|adobe|notion|directv|claro tv|win sports|datacredito'],
   // Del negocio
-  ['Envíos', 'servientrega|interrapidisimo|inter rapidisimo|coordinadora|envia|tcc|deprisa|472|mensajeros urbanos|picap envios|domicilio envio'],
-  ['Comisiones', '4x1000|4 x 1000|gmf|cuota de manejo|comision|comisiones|iva comision'],
+  ['Envíos', 'servientrega|interrapidisimo|inter rapidisimo|coordinadora|envia|tcc|deprisa|472|mensajeros urbanos|picap envios|domicilio envio|dropi|melonn|entrega'],
+  ['Comisiones', '4x1000|4 x 1000|gmf|cuota de manejo|comision|comisiones|iva comision|intereses mora'],
   ['Publicidad', 'facebook ads|facebk|meta ads|meta platforms|instagram ads|tiktok ads|google ads']
 ];
-/* Centros comerciales: monto pequeño = parqueadero; si no, compras */
-const CC_RE = /(^| )(centro comercial|c ?c|mall|plaza|premium plaza|santafe|santa fe|oviedo|el tesoro|tesoro|viva envigado|viva|unicentro|mayorca|los molinos|molinos|arkadia|florida|puerta del norte|fabricato|aventura|san diego|monterrey|el diamante|camino real|la strada|city plaza|vizcaya|parque la colina|nuestro bogota|andino|gran estacion|titan plaza|el retiro|santafe medellin)( |$)/;
+/* Centros comerciales de Medellín y alrededores: monto pequeño = parqueadero; si no, compras */
+const CC_RE = /(^| )(centro comercial|c ?c|mall|plaza|premium plaza|santafe|santa fe|oviedo|el tesoro|tesoro|viva envigado|viva laureles|viva|unicentro|mayorca|los molinos|molinos|arkadia|florida|puerta del norte|fabricato|aventura|san diego|monterrey|el diamante|camino real|la strada|city plaza|vizcaya|unico|puertas del sol|aves maria|villanueva|los sauces|rionegro|san nicolas|complex llanogrande|mall llanogrande|parque la colina|nuestro bogota|andino|gran estacion|titan plaza|el retiro|santafe medellin)( |$)/;
 const COMERCIO_RE = COMERCIOS.map(([cat, palabras, nombre, max]) => ({cat, re: new RegExp('(^| )(' + palabras + ')( |$)'), nombre: nombre || null, max: max || null}));
 const mvNormCom = t => ' ' + mvNorm(t).replace(/[^a-z0-9& ]+/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
 
@@ -106,13 +109,14 @@ function nombreComercio(raw){
   if(/^farm\b/.test(n)) s = s.replace(/^farm\b/i, 'Farmacia');
   if(/^(eds)\b/.test(n)) s = s.replace(/^eds\b/i, 'EDS');
   if(/centro comercial/.test(n)) s = s.replace(/centro comercial/i, 'C.C.');
+  else if(/^cc?\b/.test(n)) s = s.replace(/^c\.?c\.?\b/i, 'C.C.');
   s = s.replace(/\*.*$/, '')                                  // códigos de la pasarela: "*DL", "*D"
        .replace(/\.(com|co|net)\b/gi, '')
        .replace(/\b(colombia|col|sas|s a s|ltda|s a|bog|med|mde)\b\.?/gi, '')
        .replace(/\s+/g, ' ').trim()
        .split(' ').filter((w, i) => i === 0 || !/^[A-Za-z]\d{1,4}$/.test(w)).join(' ');   // código de sede "Q58" (no el "D1" del comienzo)
   if(/c\.c\. los moli$/i.test(s)) s = 'C.C. Los Molinos';
-  return mvTitulo(s || String(raw || '').trim()).replace(/\bC\.c\./, 'C.C.').replace(/\bEds\b/, 'EDS');
+  return mvTitulo(s || String(raw || '').trim()).replace(/\bC\.c\./, 'C.C.').replace(/\.\.+/g, '.').replace(/\bEds\b/, 'EDS');
 }
 
 /* ¿Es un comercio conocido? → {cat, nombre, tipo} o null (null = la app pregunta) */

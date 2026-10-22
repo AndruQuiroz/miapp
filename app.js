@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '3.3.0';
+const APP_VERSION = '3.4.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -229,12 +229,16 @@ const digitalPockets = () => pockets().filter(p => p.id !== 'efectivo' && !/efec
 const parseAlias = s => Array.from(new Set(String(s || '').split(/[,;\n]+/).map(a => normKey(a)).filter(Boolean))).slice(0, 20);
 
 /* ═════════ 2. PANTALLAS ═════════ */
-const VIEWS = ['inicio', 'stock', 'movs', 'cobros', 'mas'];
+/* 4 pestañas: Inicio · Plata (movimientos + te deben) · Equipos (stock) · Más.
+   'cobros' ya no es pestaña propia: abre Plata en "Te deben". */
+const VIEWS = ['inicio', 'stock', 'movs', 'mas'];
+const SECCIONES = ['inicio', 'stock', 'movs', 'mas'];
 
 function setView(v){
+  if(v === 'cobros'){ UI.plataSeg = 'deben'; v = 'movs'; }       // atajo y enlaces viejos
   if(!VIEWS.includes(v)) v = 'inicio';
   UI.view = v;
-  VIEWS.forEach(x => { const s = $('#v-' + x); if(s) s.classList.toggle('on', x === v); });
+  SECCIONES.forEach(x => { const s = $('#v-' + x); if(s) s.classList.toggle('on', x === v); });
   $$('#tabs .tab').forEach(b => { const on = b.dataset.v === v; b.classList.toggle('on', on); if(on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   render();
   try { window.scrollTo(0, 0); } catch(e){}
@@ -245,13 +249,22 @@ function render(){
   try {
     if(UI.view === 'inicio') renderInicio();
     else if(UI.view === 'stock') renderStock();
-    else if(UI.view === 'movs') renderMovs();
-    else if(UI.view === 'cobros') renderCobros();
+    else if(UI.view === 'movs') renderPlata();
     else if(UI.view === 'mas') renderMas();
   } catch(e){
     console.error('render', e);
     toast('Algo falló al mostrar la pantalla: ' + (e && e.message || e), {err: true});
   }
+}
+
+/* Plata: alterna entre el historial (Movimientos) y Te deben (Cobros) */
+function renderPlata(){
+  const seg = UI.plataSeg === 'deben' ? 'deben' : 'movs';
+  $$('#plataSeg button').forEach(b => b.classList.toggle('on', b.dataset.seg === seg));
+  const pm = $('#plataMovs'), pd = $('#plataDeben');
+  if(pm) pm.hidden = seg !== 'movs';
+  if(pd) pd.hidden = seg !== 'deben';
+  if(seg === 'deben') renderCobros(); else renderMovs();
 }
 
 function renderHeader(){
@@ -525,6 +538,18 @@ function renderRefQuick(){
 }
 
 /* ── Movimientos ── */
+/* Encabezado de día del historial: "Hoy", "Ayer" o "mié 15 oct" */
+function diaLabel(f){
+  if(!f) return '—';
+  const t = today();
+  if(f === t) return 'Hoy';
+  if(f === shiftDate(t, -1)) return 'Ayer';
+  const [y, m, d] = String(f).split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return DIAS[dt.getDay()] + ' ' + d + ' ' + MESES[m - 1].toLowerCase().slice(0, 3);
+}
+
+/* Historial "tipo X": por día, cada línea con nombre, lo que entró/salió. Toca para ver o corregir. */
 function renderMovs(){
   const ym = UI.mvMonth;
   $('#mvMonth').textContent = ymLabel(ym);
@@ -550,8 +575,32 @@ function renderMovs(){
     <div class="card a-r"><div class="lbl">Salió</div><div class="val neg">${fmt(salio)}</div></div>
     <div class="card a-b"><div class="lbl">Neto</div><div class="val ${entro - salio < 0 ? 'neg' : ''}">${fmt(entro - salio)}</div></div></div>`;
   if(!rows.length) h += emptyHTML('📋', all.length ? 'Nada con este filtro en ' + ymLabel(ym) + '.' : 'Sin movimientos en ' + ymLabel(ym) + '.');
-  else h += `<div class="list">${rows.slice(0, 300).map(rowHTML).join('')}</div><p class="hint" style="text-align:center">Toca un producto para editarlo; cualquier otro movimiento, para eliminarlo.</p>`;
+  else {
+    /* agrupar por día (ya vienen ordenados por fecha desc) */
+    let dia = null, abierto = false;
+    rows.slice(0, 400).forEach(r => {
+      const f = String(r.fecha || '').slice(0, 10);
+      if(f !== dia){
+        if(abierto) h += '</div>';
+        dia = f;
+        h += `<div class="dia-h"><span>${esc(diaLabel(f))}</span></div><div class="list">`;
+        abierto = true;
+      }
+      h += rowX(r);
+    });
+    if(abierto) h += '</div>';
+    h += `<p class="hint" style="text-align:center">Toca un producto para editarlo; cualquier otro movimiento, para corregirlo o eliminarlo.</p>`;
+  }
   $('#movsBody').innerHTML = h;
+}
+
+/* Fila compacta del historial: ícono, nombre, un detalle corto, monto (sin repetir la fecha) */
+function rowX(r){
+  const sub = [r.s, r.pocket ? pn(r.pocket) : '', r.fx ? fnName(r.fx) : '', r.extra || ''].filter(Boolean).join(' · ');
+  return `<button type="button" class="row" data-a="mov" data-col="${r.col}" data-id="${esc(r.id)}" data-kind="${r.kind || ''}">
+    <span class="ico">${r.ico}</span>
+    <span class="rmain"><span class="rt" style="display:block">${esc(r.t)}</span><span class="rs" style="display:block">${esc(sub)}</span></span>
+    <span class="ramt">${money(r.m, r.amt)}${r.kind === 'venta' && r.m < r.amt ? `<small>de ${full(r.amt)}</small>` : ''}</span></button>`;
 }
 
 /* ── Cobros ── */
@@ -2195,7 +2244,8 @@ const ACT = {
   ex: el => { const q = $('#qInput'); q.value = el.dataset.t; q.focus(); toast('Cámbialo a tu gusto y toca ➤'); },
   goAjustes: () => { UI.masSeg = 'ajustes'; setView('mas'); },
   goStock: () => { UI.stSeg = 'stock'; setView('stock'); },
-  goCobros: () => setView('cobros'),
+  goCobros: () => { UI.plataSeg = 'deben'; setView('movs'); },
+  plataSeg: el => { UI.plataSeg = el.dataset.seg; renderPlata(); },
   goMovs: () => setView('movs'),
   pend: el => classify(el.dataset.id, el.dataset.k),
   pendRule: el => applyRule(el.dataset.id),
@@ -3489,6 +3539,7 @@ function bindEvents(){
   /* controles con estado (markup estático: no pierden el foco al pintar) */
   $('#stSearch').addEventListener('input', e => { UI.stQ = e.target.value; renderStock(); });
   $('#stSeg').addEventListener('click', e => { const b = e.target.closest('button[data-seg]'); if(b){ UI.stSeg = b.dataset.seg; renderStock(); } });
+  $('#plataSeg').addEventListener('click', e => { const b = e.target.closest('button[data-seg]'); if(b){ UI.plataSeg = b.dataset.seg; renderPlata(); } });
   $('#mvPrev').addEventListener('click', () => { UI.mvMonth = ymAdd(UI.mvMonth, -1); renderMovs(); });
   $('#mvNext').addEventListener('click', () => { if(UI.mvMonth < today().slice(0, 7)){ UI.mvMonth = ymAdd(UI.mvMonth, 1); renderMovs(); } });
   $('#mvFil').addEventListener('click', e => { const b = e.target.closest('button[data-f]'); if(b){ UI.mvF = b.dataset.f; renderMovs(); } });
@@ -3592,7 +3643,7 @@ function init(){
   try { qs = new URLSearchParams(location.search); } catch(e){ qs = new URLSearchParams(''); }
   const v0 = qs.get('v'), voz = qs.get('voz') === '1', noti = qs.get('noti') || '', bolQ = qs.get('bol') || '', qDirect = qs.get('q') || '';
   if(v0 || voz || noti || qDirect){ try { history.replaceState(null, '', location.pathname); } catch(e){} }
-  setView(VIEWS.includes(v0) ? v0 : 'inicio');
+  setView(v0 === 'cobros' || VIEWS.includes(v0) ? v0 : 'inicio');
   registerSW();
 
   const first = hasCloud() ? sync() : Promise.resolve(false);

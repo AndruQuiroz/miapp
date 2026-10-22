@@ -159,6 +159,9 @@ button.card{width:100%;font:inherit;color:inherit}
 .ramt small{display:block;font-size:10.5px;font-weight:500;color:var(--ink3)}
 .tot{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
 .tot .card{padding:10px 11px}.tot .val{font-size:16px}
+.dia-h{display:flex;align-items:center;gap:8px;margin:14px 2px 6px;font-size:13px;font-weight:700;color:var(--mut,#9aa7b4);text-transform:uppercase;letter-spacing:.03em}
+.dia-h::after{content:"";flex:1;height:1px;background:var(--line,rgba(127,127,127,.18))}
+.dia-h:first-child{margin-top:4px}
 
 /* ── Controles ── */
 .seg{display:flex;background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r);padding:3px;gap:3px;margin-bottom:12px}
@@ -417,28 +420,33 @@ body:has(.wrap input:focus) .tabs{display:none}
 
   <!-- ═════ MOVIMIENTOS ═════ -->
   <section class="view" id="v-movs" data-view="movs">
-    <h2 class="ttl">Movimientos</h2>
-    <div class="monthbar">
-      <button class="ibtn" id="mvPrev" type="button" aria-label="Mes anterior">‹</button>
-      <b id="mvMonth"></b>
-      <button class="ibtn" id="mvNext" type="button" aria-label="Mes siguiente">›</button>
+    <h2 class="ttl">Plata</h2>
+    <div class="seg" id="plataSeg">
+      <button type="button" data-seg="movs" class="on" data-testid="plata-movs">💵 Movimientos</button>
+      <button type="button" data-seg="deben" data-testid="plata-deben">🤝 Te deben</button>
     </div>
-    <div class="fils" id="mvFil">
-      <button type="button" data-f="todos" class="on">Todos</button>
-      <button type="button" data-f="negocio">Negocio</button>
-      <button type="button" data-f="personal">Personal</button>
-      <button type="button" data-f="cobros">Cobros</button>
-      <button type="button" data-f="bolsillos">Bolsillos</button>
-    </div>
-    <div class="mvf"><select class="in" id="mvFondo" data-testid="mv-fondo" aria-label="Filtrar por apartado"><option value="">🎯 Todos los apartados</option></select></div>
-    <div id="movsBody"></div>
-  </section>
 
-  <!-- ═════ COBROS ═════ -->
-  <section class="view" id="v-cobros" data-view="cobros">
-    <h2 class="ttl">Cobros</h2>
-    <button class="btn b-g full" id="cbNew" data-testid="cobro-nuevo" type="button" style="margin-bottom:12px">+ Nuevo cobro</button>
-    <div id="cobrosBody"></div>
+    <div id="plataMovs">
+      <div class="monthbar">
+        <button class="ibtn" id="mvPrev" type="button" aria-label="Mes anterior">‹</button>
+        <b id="mvMonth"></b>
+        <button class="ibtn" id="mvNext" type="button" aria-label="Mes siguiente">›</button>
+      </div>
+      <div class="fils" id="mvFil">
+        <button type="button" data-f="todos" class="on">Todos</button>
+        <button type="button" data-f="negocio">Negocio</button>
+        <button type="button" data-f="personal">Personal</button>
+        <button type="button" data-f="cobros">Cobros</button>
+        <button type="button" data-f="bolsillos">Bolsillos</button>
+      </div>
+      <div class="mvf"><select class="in" id="mvFondo" data-testid="mv-fondo" aria-label="Filtrar por apartado"><option value="">🎯 Todos los apartados</option></select></div>
+      <div id="movsBody"></div>
+    </div>
+
+    <div id="plataDeben" hidden>
+      <button class="btn b-g full" id="cbNew" data-testid="cobro-nuevo" type="button" style="margin-bottom:12px">+ Nuevo cobro</button>
+      <div id="cobrosBody"></div>
+    </div>
   </section>
 
   <!-- ═════ MÁS ═════ -->
@@ -543,9 +551,8 @@ body:has(.wrap input:focus) .tabs{display:none}
 <nav class="tabs" id="tabs" aria-label="Navegación">
   <div class="tabs-in">
     <button class="tab" type="button" data-v="inicio" data-testid="tab-inicio"><span>🏠</span>Inicio<i class="badge" id="pendBadge" hidden></i></button>
-    <button class="tab" type="button" data-v="stock" data-testid="tab-stock"><span>📦</span>Stock</button>
-    <button class="tab" type="button" data-v="movs" data-testid="tab-movs"><span>📋</span>Movimientos</button>
-    <button class="tab" type="button" data-v="cobros" data-testid="tab-cobros"><span>🤝</span>Cobros</button>
+    <button class="tab" type="button" data-v="movs" data-testid="tab-movs"><span>💵</span>Plata</button>
+    <button class="tab" type="button" data-v="stock" data-testid="tab-stock"><span>📱</span>Equipos</button>
     <button class="tab" type="button" data-v="mas" data-testid="tab-mas"><span>☰</span>Más</button>
   </div>
 </nav>
