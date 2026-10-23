@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '3.7.0';
+const APP_VERSION = '3.8.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -476,8 +476,7 @@ function pendCard(p){
 /* ── Equipos: En stock · Vendidos · Pedidos ── */
 function renderStock(){
   $$('#stSeg button').forEach(b => b.classList.toggle('on', b.dataset.seg === UI.stSeg));
-  const tools = $('#stTools'); if(tools) tools.hidden = UI.stSeg === 'pedidos';
-  if(UI.stSeg === 'pedidos'){ renderPedidos(); return; }
+  if(UI.stSeg !== 'stock' && UI.stSeg !== 'sold') UI.stSeg = 'stock';
   const q = normKey(UI.stQ), qs = q ? q.split(' ') : [];
   const match = i => !qs.length || qs.every(w => normKey([i.desc, i.cat, i.notes].join(' ')).includes(w));
   const all = L(DB, 'items'), t = today();
@@ -547,8 +546,7 @@ function renderRefQuick(){
 function renderPedidos(){
   const ps = L(DB, 'pedidos').filter(p => p.estado !== 'cumplido').sort((a, b) => (+b.u || 0) - (+a.u || 0));
   let h = `<button type="button" class="btn b-g full" data-a="form" data-k="pedido" data-testid="pedido-nuevo" style="margin-bottom:12px">+ Nuevo pedido</button>`;
-  if(!ps.length) h += emptyHTML('📝', 'Apunta lo que te piden tus clientes. Cuando compres ese modelo, te aviso quién lo estaba buscando.',
-    null, `<div class="btns"><button type="button" class="btn b-gh" data-a="form" data-k="pedido">+ Nuevo pedido</button></div>`);
+  if(!ps.length) h += emptyHTML('📝', 'Apunta lo que te piden tus clientes. Cuando compres ese modelo, te aviso quién lo estaba buscando.');
   h += ps.map(p => {
     const disp = stockParaPedido(p);
     return `<div class="it" data-testid="pedido" data-id="${esc(p.id)}"><div class="it-h"><div style="min-width:0"><div class="it-n">${esc(p.modelo)}</div>
@@ -560,7 +558,27 @@ function renderPedidos(){
         <button type="button" class="ibtn" data-a="editPedido" data-id="${esc(p.id)}" aria-label="Editar">✏️</button>
         <button type="button" class="ibtn" data-a="delPedido" data-id="${esc(p.id)}" aria-label="Eliminar">🗑️</button></div></div>`;
   }).join('');
-  $('#stockBody').innerHTML = h;
+  const box = $('#extrasPedidos'); if(box) box.innerHTML = h;
+}
+/* ☰ Más → 🧰 Extras: herramientas que no son del día a día */
+function renderExtras(){
+  const el = $('#extrasBody');
+  if(!el) return;
+  el.innerHTML = `<div class="pbtns" style="margin-bottom:14px">
+      <button type="button" class="btn b-b" data-a="calculadora" data-testid="calc-abrir">🧮 Calcular negocio</button>
+      <button type="button" class="btn b-b" data-a="publicarElegir" data-testid="publicar-elegir">📣 Texto para publicar</button></div>
+    <div class="sec-h"><span class="sec-t">📝 Pedidos de clientes</span></div>
+    <div id="extrasPedidos"></div>`;
+  renderPedidos();
+}
+/* elegir el equipo para armar el texto de publicación */
+function openPublicarElegir(){
+  const st = L(DB, 'items').filter(i => i.status !== 'sold').sort((a, b) => String(b.buyDate || '').localeCompare(String(a.buyDate || '')));
+  const body = st.length ? `<p class="hint" style="margin-bottom:10px">¿Cuál equipo vas a publicar?</p>` + st.map(i =>
+    `<button type="button" class="row" data-a="publicar" data-id="${esc(i.id)}" data-testid="pub-item"><span class="ico">📱</span><span class="rmain"><span class="rt" style="display:block">${esc(i.desc)}</span>
+      <span class="rs" style="display:block">${esc([i.bateria != null && i.bateria !== '' ? '🔋 ' + i.bateria + '%' : '', i.targetPrice ? 'meta ' + fmt(i.targetPrice) : ''].filter(Boolean).join(' · ') || 'en stock')}</span></span><span class="ramt">›</span></button>`).join('')
+    : emptyHTML('📦', 'No tienes equipos en stock para publicar.');
+  openInfo({kind: 'pubElegir'}, '📣 Texto para publicar', body);
 }
 /* productos en stock que sirven para un pedido (mismo modelo y, si puso tope, dentro del presupuesto por tu precio sugerido) */
 function stockParaPedido(p){
@@ -575,7 +593,7 @@ function avisoPedido(desc){
   const ps = L(DB, 'pedidos').filter(p => p.estado !== 'cumplido' && normModelo(p.modelo) === m);
   if(!ps.length) return;
   const nombres = ps.map(p => p.cliente).filter(Boolean);
-  setTimeout(() => toast('📝 ' + (nombres.length ? nombres.join(', ') + (nombres.length === 1 ? ' lo estaba' : ' lo estaban') + ' buscando' : 'Tienes un pedido de este modelo') + '. Míralo en Equipos → Pedidos', {ms: 7000}), 700);
+  setTimeout(() => toast('📝 ' + (nombres.length ? nombres.join(', ') + (nombres.length === 1 ? ' lo estaba' : ' lo estaban') + ' buscando' : 'Tienes un pedido de este modelo') + '. Míralo en Más → 🧰 Extras', {ms: 7000}), 700);
 }
 function waPedido(id){
   const p = get('pedidos', id);
@@ -715,6 +733,7 @@ function renderMas(){
   if(UI.masSeg === 'analisis') renderAnalisis();
   else if(UI.masSeg === 'dinero') renderDinero();
   else if(UI.masSeg === 'contactos') renderContactos();
+  else if(UI.masSeg === 'extras') renderExtras();
   else renderAjustes();
 }
 
@@ -1023,8 +1042,7 @@ function fichaHTML(h){
       : '';
     if(!it.del) b += `<div class="pbtns" style="margin-top:8px"><button type="button" class="btn b-gh" data-a="verifImei" data-id="${esc(it.id)}" data-testid="verif-imei">🔍 Verificar IMEI${it.imeiVerif ? ' otra vez' : ''}</button></div>`;
   }
-  if(!it.del) b += `<div class="pbtns" style="margin-top:8px"><button type="button" class="btn b-b" data-a="ocrFicha" data-id="${esc(it.id)}" data-testid="ocr-ficha">📷 Leer foto / 3uTools</button>
-    ${it.status !== 'sold' ? `<button type="button" class="btn b-b" data-a="publicar" data-id="${esc(it.id)}" data-testid="publicar">📣 Texto para publicar</button>` : ''}</div>`;
+  if(!it.del) b += `<button type="button" class="btn b-b full" style="margin-top:8px" data-a="ocrFicha" data-id="${esc(it.id)}" data-testid="ocr-ficha">📷 Leer datos de una foto / reporte 3uTools</button>`;
   const ct = [['Se lo compraste a', h.proveedor, it.proveedorId], ['Se lo vendiste a', h.venta && h.venta.cliente, it.clienteId]].filter(x => x[1]);
   if(ct.length) b += `<div class="sec-h" style="margin-top:14px"><span class="sec-t">Contactos</span></div>` + ct.map(([l, n, id]) =>
     `<div class="kvline"><span>${l}</span>${id && get('contactos', id) ? `<button type="button" class="lnk" data-a="goContacto" data-id="${esc(id)}">${esc(n)}</button>` : `<b>${esc(n)}</b>`}</div>`).join('');
@@ -1381,8 +1399,8 @@ function updateRef(){
     const pago = F.kind === 'compra' ? num(v_buy()) : 0;
     const gan = r && r.sugeridoVenta && pago > 0 ? r.sugeridoVenta - pago : null;
     const ganH = gan == null ? '' : `<div class="hint" data-testid="f-ref-ganancia" style="margin:-4px 0 6px">Si lo vendes en ~${full(r.sugeridoVenta)}, te quedarían <b class="${gan >= 0 ? 'pos' : 'neg'}">${gan >= 0 ? '~' : '−'}${full(Math.abs(gan))}</b></div>`;
-    box.innerHTML = r ? ganH + `<button type="button" class="refline" data-ref-toggle aria-expanded="false" data-testid="f-ref-line">📊 ${esc(refLine(r) || 'Ver referencia de ' + r.modelo)} <span aria-hidden="true">▾</span></button>
-      <div class="refdet" hidden data-testid="f-ref-det">${refStatsHTML(r)}${r.sugeridoVenta ? `<button type="button" class="btn b-b full" data-ref-use="${use[0]}" data-v="${r.sugeridoVenta}" data-testid="f-ref-usar">${esc(use[1])}</button>` : ''}</div>` : '';
+    box.innerHTML = r ? `<button type="button" class="refline" data-ref-toggle aria-expanded="false" data-testid="f-ref-line">📊 ${esc(refLine(r) || 'Ver referencia de ' + r.modelo)} <span aria-hidden="true">▾</span></button>
+      <div class="refdet" hidden data-testid="f-ref-det">${ganH}${refStatsHTML(r)}${r.sugeridoVenta ? `<button type="button" class="btn b-b full" data-ref-use="${use[0]}" data-v="${r.sugeridoVenta}" data-testid="f-ref-usar">${esc(use[1])}</button>` : ''}</div>` : '';
   }
   refreshShow();
 }
@@ -2389,6 +2407,7 @@ const ACT = {
   goStock: () => { UI.stSeg = 'stock'; setView('stock'); },
   waPedido: el => waPedido(el.dataset.id),
   publicar: el => openPublicar(el.dataset.id),
+  publicarElegir: () => openPublicarElegir(),
   pubCopiar: () => { const t = $('#pubTxt'); if(t) copyText(t.value, 'el texto'); },
   editPedido: el => { const p = get('pedidos', el.dataset.id); if(p) openForm('pedido', Object.assign({}, p)); },
   pedidoCumplido: el => { const p = get('pedidos', el.dataset.id); if(!p) return; put('pedidos', Object.assign({}, p, {estado: 'cumplido'})); commit('✓ Pedido de ' + (p.cliente || p.modelo) + ' cumplido'); },
