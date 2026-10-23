@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '3.8.0';
+const APP_VERSION = '3.8.1';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -1358,7 +1358,11 @@ function openForm(kind, d, opts){
   const b = $('#sheetBody'); if(b) b.scrollTop = 0;
   // enfocar el primer campo obligatorio vacío (en formularios prellenados no abre el teclado)
   const first = fields.find(f => f.req && (F.v[f.k] === '' || F.v[f.k] == null) && fieldVisible(f));
-  if(first){ const el = $('#f-' + first.k); if(el && el.focus) setTimeout(() => { if(F && F.kind === kind) el.focus(); }, 60); }
+  // foco inicial en el primer campo, pero solo si la persona no está ya escribiendo en otro (si no, le "robaría" lo que teclea)
+  if(first){ const el = $('#f-' + first.k); if(el && el.focus) setTimeout(() => {
+    const a = document.activeElement, form = $('#sheetForm');
+    if(F && F.kind === kind && el.isConnected && !(a && a !== el && form && form.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) el.focus();
+  }, 60); }
 }
 
 function closeForm(){
