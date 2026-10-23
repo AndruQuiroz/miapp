@@ -161,11 +161,18 @@ class Phone {
   async toastText() { return flat(await this.page.evaluate(() => { const t = document.querySelector('#toast'); return t && t.classList.contains('on') ? t.innerText : ''; })); }
   async waitToast(re, timeout = 15000) {
     const from = this._toastIdx || 0;
-    const h = await this.page.waitForFunction(([src, fl, i0]) => {
-      const L = window.__toasts || [], rx = new RegExp(src, fl);
-      for (let i = Math.min(i0, L.length); i < L.length; i++) if (rx.test(L[i])) return { i, txt: L[i] };
-      return false;
-    }, [re.source, re.flags, from], { timeout });
+    let h;
+    try {
+      h = await this.page.waitForFunction(([src, fl, i0]) => {
+        const L = window.__toasts || [], rx = new RegExp(src, fl);
+        for (let i = Math.min(i0, L.length); i < L.length; i++) if (rx.test(L[i])) return { i, txt: L[i] };
+        return false;
+      }, [re.source, re.flags, from], { timeout });
+    } catch (e) {
+      const vistos = await this.page.evaluate(() => (window.__toasts || []).slice(-6)).catch(() => []);
+      const hoja = await this.page.evaluate(() => { const s = document.querySelector('.sheet.on'); return s ? s.innerText.slice(0, 300) : ''; }).catch(() => '');
+      throw new Error(`no apareció el aviso ${re} — últimos avisos: ${JSON.stringify(vistos)} — hoja abierta: ${JSON.stringify(hoja)}`);
+    }
     const { i, txt } = await h.jsonValue();
     this._toastIdx = i + 1;
     return flat(txt);
