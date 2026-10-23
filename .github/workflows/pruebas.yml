@@ -18,30 +18,34 @@ concurrency:
 
 jobs:
   pruebas:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
 
       - name: Instalar herramientas de prueba
         run: |
-          npm install --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          set -o pipefail
+          ( npm install --no-audit --no-fund && npx playwright install --with-deps chromium ) 2>&1 | tee instalar.log || {
+            echo "::error title=No se pudo instalar::$(tail -5 instalar.log | tr '\n' ' ' | cut -c1-900)"; exit 1; }
 
       - name: Correr las pruebas
         run: |
           set -o pipefail
           npm run preparar
-          node --test 'tests/**/*.test.js' 'server/test/*.test.js' 2>&1 | tee pruebas.log
+          FALLO=0
+          node --test 'tests/**/*.test.js' 'server/test/*.test.js' 2>&1 | tee pruebas.log || FALLO=1
           # que ninguna prueba se haya saltado en silencio (p. ej. si faltara el navegador)
           SALT=$(grep -E '^# skipped' pruebas.log | awk '{print $3}')
           echo "Saltadas: $SALT"
+          grep -E '^\s+not ok' pruebas.log | head -10 | while read -r l; do echo "::error title=Prueba fallida::$l"; done
+          if [ "$FALLO" = "1" ]; then exit 1; fi
           if [ "${SALT:-0}" != "0" ]; then echo "::error::Hay $SALT pruebas saltadas"; exit 1; fi
 
       - name: Resumen
