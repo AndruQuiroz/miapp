@@ -1,0 +1,933 @@
+{
+  "items": [
+    {
+      "id": "mrp0a4io0ve7",
+      "desc": "iPhone 13 128GB",
+      "cat": "Celulares",
+      "cond": "bueno",
+      "notes": "Batería 89%, con caja",
+      "buyPrice": 1650000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-07-09",
+      "targetPrice": 2000000,
+      "status": "sold",
+      "sellPrice": 1950000,
+      "sellPaid": 1950000,
+      "sellPocket": "nequi",
+      "sellDate": "2026-07-17",
+      "sellNotes": "Entrega en El Poblado",
+      "u": 1784296860000
+    },
+    {
+      "id": "ms3ar7s0n479",
+      "desc": "PS5 825GB + 2 controles",
+      "cat": "Consolas",
+      "cond": "bueno",
+      "notes": "Edición con lector",
+      "buyPrice": 1800000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-07-13",
+      "targetPrice": 2200000,
+      "status": "sold",
+      "sellPrice": 2150000,
+      "sellPaid": 2150000,
+      "sellPocket": "nequi",
+      "sellDate": "2026-07-27",
+      "sellNotes": "",
+      "u": 1785160980000
+    },
+    {
+      "id": "mrw5mj1c679a",
+      "desc": "Nike Air Force 1 talla 42",
+      "cat": "Calzado",
+      "cond": "nuevo",
+      "notes": "Blancos, sin uso",
+      "buyPrice": 280000,
+      "buyPocket": "efectivo",
+      "buyDate": "2026-07-17",
+      "targetPrice": 380000,
+      "status": "sold",
+      "sellPrice": 380000,
+      "sellPaid": 380000,
+      "sellPocket": "efectivo",
+      "sellDate": "2026-07-22",
+      "sellNotes": "",
+      "u": 1784729100000
+    },
+    {
+      "id": "ms90nrmoi7ba",
+      "desc": "AirPods Pro 2da gen",
+      "cat": "Accesorios",
+      "cond": "bueno",
+      "notes": "",
+      "buyPrice": 450000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-07-22",
+      "targetPrice": 620000,
+      "status": "sold",
+      "sellPrice": 600000,
+      "sellPaid": 600000,
+      "sellPocket": "nequi",
+      "sellDate": "2026-07-31",
+      "sellNotes": "Envío por Servientrega",
+      "u": 1785506820000
+    },
+    {
+      "id": "mst0w9k0pe8y",
+      "desc": "Xbox Series S",
+      "cat": "Consolas",
+      "cond": "bueno",
+      "notes": "Con un control",
+      "buyPrice": 850000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-07-31",
+      "targetPrice": 1050000,
+      "status": "sold",
+      "sellPrice": 1050000,
+      "sellPaid": 1050000,
+      "sellPocket": "nequi",
+      "sellDate": "2026-08-14",
+      "sellNotes": "",
+      "u": 1786716540000
+    },
+    {
+      "id": "msvvujhc0kkz",
+      "desc": "Samsung Galaxy S21",
+      "cat": "Celulares",
+      "cond": "bueno",
+      "notes": "Pantalla con un rayón leve",
+      "buyPrice": 900000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-08-04",
+      "targetPrice": 1150000,
+      "status": "sold",
+      "sellPrice": 1100000,
+      "sellPaid": 1100000,
+      "sellPocket": "nequi",
+      "sellDate": "2026-08-16",
+      "sellNotes": "",
+      "u": 1786889460000
+    },
+    {
+      "id": "mt314deo1xsv",
+      "desc": "Chaqueta Levi's talla M",
+      "cat": "Ropa",
+      "cond": "regular",
+      "notes": "Algo desgastada en el codo",
+      "buyPrice": 90000,
+      "buyPocket": "efectivo",
+      "buyDate": "2026-08-11",
+      "targetPrice": 150000,
+      "status": "sold",
+      "sellPrice": 150000,
+      "sellPaid": 150000,
+      "sellPocket": "efectivo",
+      "sellDate": "2026-08-21",
+      "sellNotes": "",
+      "u": 1787321580000
+    },
+    {
+      "id": "mtd19wo0t04q",
+      "desc": "MacBook Air M1 8/256",
+      "cat": "Computadores",
+      "cond": "bueno",
+      "notes": "Ciclos de batería: 212",
+      "buyPrice": 2900000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-08-16",
+      "targetPrice": 3500000,
+      "status": "sold",
+      "sellPrice": 3500000,
+      "sellPaid": 2500000,
+      "sellPocket": "nequi",
+      "sellDate": "2026-08-28",
+      "sellNotes": "Quedó debiendo $1.000.000",
+      "u": 1787926500000
+    },
+    {
+      "id": "mta6grxcvplb",
+      "desc": "Funko Pop Batman",
+      "cat": "Coleccionables",
+      "cond": "nuevo",
+      "notes": "En caja",
+      "buyPrice": 60000,
+      "buyPocket": "efectivo",
+      "buyDate": "2026-08-21",
+      "targetPrice": 110000,
+      "status": "sold",
+      "sellPrice": 110000,
+      "sellPaid": 110000,
+      "sellPocket": "efectivo",
+      "sellDate": "2026-08-26",
+      "sellNotes": "",
+      "u": 1787753820000
+    },
+    {
+      "id": "mtogxv6orhlb",
+      "desc": "Nintendo Switch OLED",
+      "cat": "Consolas",
+      "cond": "bueno",
+      "notes": "Con dock y 2 joy-con",
+      "buyPrice": 1100000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-08-24",
+      "targetPrice": 1400000,
+      "status": "sold",
+      "sellPrice": 1350000,
+      "sellPaid": 1000000,
+      "sellPocket": "nequi",
+      "sellDate": "2026-09-05",
+      "sellNotes": "Quedó debiendo $350.000",
+      "u": 1788617940000
+    },
+    {
+      "id": "mtrbw540km29",
+      "desc": "Monitor Samsung 24\"",
+      "cat": "Computadores",
+      "cond": "bueno",
+      "notes": "",
+      "buyPrice": 380000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-08-31",
+      "targetPrice": 460000,
+      "status": "sold",
+      "sellPrice": 450000,
+      "sellPaid": 450000,
+      "sellPocket": "nequi",
+      "sellDate": "2026-09-07",
+      "sellNotes": "",
+      "u": 1788790860000
+    },
+    {
+      "id": "mu2rhj1ce7oz",
+      "desc": "Teclado mecánico Redragon",
+      "cat": "Accesorios",
+      "cond": "regular",
+      "notes": "Falta una tecla",
+      "buyPrice": 160000,
+      "buyPocket": "efectivo",
+      "buyDate": "2026-09-07",
+      "targetPrice": 190000,
+      "status": "sold",
+      "sellPrice": 140000,
+      "sellPaid": 140000,
+      "sellPocket": "efectivo",
+      "sellDate": "2026-09-15",
+      "sellNotes": "Lo rematé",
+      "u": 1789482180000
+    },
+    {
+      "id": "mtircw00flkq",
+      "desc": "iPhone 11 64GB",
+      "cat": "Celulares",
+      "cond": "regular",
+      "notes": "Batería 78%",
+      "buyPrice": 700000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-09-01",
+      "targetPrice": 880000,
+      "status": "stock",
+      "u": 1788272640000
+    },
+    {
+      "id": "mu9wrcyoz6f2",
+      "desc": "Tablet Samsung A8",
+      "cat": "Computadores",
+      "cond": "bueno",
+      "notes": "",
+      "buyPrice": 420000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-09-20",
+      "targetPrice": 520000,
+      "status": "stock",
+      "u": 1789914300000
+    },
+    {
+      "id": "msags1xcgyl1",
+      "desc": "Jordan 1 Retro talla 41",
+      "cat": "Calzado",
+      "cond": "nuevo",
+      "notes": "Chicago, con caja",
+      "buyPrice": 650000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-08-01",
+      "targetPrice": 850000,
+      "status": "stock",
+      "u": 1785594360000
+    },
+    {
+      "id": "mue75hk04on3",
+      "desc": "Reloj Casio vintage",
+      "cat": "Accesorios",
+      "cond": "bueno",
+      "notes": "Funciona perfecto",
+      "buyPrice": 120000,
+      "buyPocket": "efectivo",
+      "buyDate": "2026-09-23",
+      "targetPrice": 190000,
+      "status": "stock",
+      "u": 1790173620000
+    },
+    {
+      "id": "muihibuos2l2",
+      "desc": "Cámara GoPro Hero 9",
+      "cat": "Accesorios",
+      "cond": "bueno",
+      "notes": "Con 2 baterías",
+      "buyPrice": 700000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-09-26",
+      "targetPrice": 900000,
+      "status": "stock",
+      "u": 1790432880000
+    },
+    {
+      "id": "mumrv65c8y95",
+      "desc": "Lego Star Wars Halcón Milenario",
+      "cat": "Coleccionables",
+      "cond": "nuevo",
+      "notes": "Me lo dieron como parte de pago",
+      "buyPrice": 320000,
+      "buyPocket": "",
+      "buyDate": "2026-09-29",
+      "targetPrice": 420000,
+      "status": "stock",
+      "u": 1790692140000
+    },
+    {
+      "id": "mupms5s0ve8z",
+      "desc": "Laptop Lenovo Legion 5",
+      "cat": "Computadores",
+      "cond": "bueno",
+      "notes": "RTX 3060, 16GB RAM",
+      "buyPrice": 2400000,
+      "buyPocket": "nequi",
+      "buyDate": "2026-10-01",
+      "targetPrice": 2900000,
+      "status": "stock",
+      "u": 1790865000000
+    },
+    {
+      "id": "mushp5eof0mz",
+      "desc": "Camiseta Nike dri-fit talla L",
+      "cat": "Ropa",
+      "cond": "nuevo",
+      "notes": "",
+      "buyPrice": 45000,
+      "buyPocket": "efectivo",
+      "buyDate": "2026-10-03",
+      "targetPrice": 80000,
+      "status": "stock",
+      "u": 1791037860000
+    }
+  ],
+  "gastos": [
+    {
+      "id": "mrp1dzpc3foe",
+      "desc": "Envío iPhone 13 (Servientrega)",
+      "valor": 14000,
+      "cat": "Envíos",
+      "tipo": "negocio",
+      "bolsillo": "nequi",
+      "fecha": "2026-07-17",
+      "u": 1784298720000
+    },
+    {
+      "id": "ms3btso00u3n",
+      "desc": "Envío PS5",
+      "valor": 18000,
+      "cat": "Envíos",
+      "tipo": "negocio",
+      "bolsillo": "nequi",
+      "fecha": "2026-07-27",
+      "u": 1785162780000
+    },
+    {
+      "id": "ms91mhmojn9x",
+      "desc": "Envío AirPods",
+      "valor": 9000,
+      "cat": "Envíos",
+      "tipo": "negocio",
+      "bolsillo": "nequi",
+      "fecha": "2026-07-31",
+      "u": 1785508440000
+    },
+    {
+      "id": "mst1tp9cgfdn",
+      "desc": "Envío Xbox (Interrapidísimo)",
+      "valor": 15000,
+      "cat": "Envíos",
+      "tipo": "negocio",
+      "bolsillo": "efectivo",
+      "fecha": "2026-08-14",
+      "u": 1786718100000
+    },
+    {
+      "id": "msvwqow083wa",
+      "desc": "Envío Galaxy S21",
+      "valor": 12000,
+      "cat": "Envíos",
+      "tipo": "negocio",
+      "bolsillo": "nequi",
+      "fecha": "2026-08-16",
+      "u": 1786890960000
+    },
+    {
+      "id": "mrhwd5uon5a8",
+      "desc": "Cajas y burbuja",
+      "valor": 25000,
+      "cat": "Empaques",
+      "tipo": "negocio",
+      "bolsillo": "efectivo",
+      "fecha": "2026-07-12",
+      "u": 1783867020000
+    },
+    {
+      "id": "mshmeqtcz805",
+      "desc": "Bolsas y cinta",
+      "valor": 18000,
+      "cat": "Empaques",
+      "tipo": "negocio",
+      "bolsillo": "efectivo",
+      "fecha": "2026-08-06",
+      "u": 1786027080000
+    },
+    {
+      "id": "mtohnl40rkq2",
+      "desc": "Cajas medianas",
+      "valor": 22000,
+      "cat": "Empaques",
+      "tipo": "negocio",
+      "bolsillo": "nequi",
+      "fecha": "2026-09-05",
+      "u": 1788619140000
+    },
+    {
+      "id": "ms3c2sqol42b",
+      "desc": "Comisión Mercado Libre",
+      "valor": 35000,
+      "cat": "Comisiones",
+      "tipo": "negocio",
+      "bolsillo": "nequi",
+      "fecha": "2026-07-27",
+      "u": 1785163200000
+    },
+    {
+      "id": "mtd27cdc99ud",
+      "desc": "Comisión Mercado Libre",
+      "valor": 28000,
+      "cat": "Comisiones",
+      "tipo": "negocio",
+      "bolsillo": "nequi",
+      "fecha": "2026-08-28",
+      "u": 1787928060000
+    },
+    {
+      "id": "ms0h9o00dc6s",
+      "desc": "Impulsar publicación Facebook",
+      "valor": 50000,
+      "cat": "Publicidad",
+      "tipo": "negocio",
+      "bolsillo": "nequi",
+      "fecha": "2026-07-25",
+      "u": 1784990520000
+    },
+    {
+      "id": "mtk7h6ao2jwu",
+      "desc": "Publicidad Instagram",
+      "valor": 80000,
+      "cat": "Publicidad",
+      "tipo": "negocio",
+      "bolsillo": "nequi",
+      "fecha": "2026-09-02",
+      "u": 1788360180000
+    },
+    {
+      "id": "mrgh6b9c5qxb",
+      "desc": "Almuerzo",
+      "valor": 18000,
+      "cat": "Comida",
+      "tipo": "personal",
+      "bolsillo": "efectivo",
+      "fecha": "2026-07-11",
+      "u": 1783781040000
+    },
+    {
+      "id": "mshmnqw0pmw7",
+      "desc": "Almuerzo con los del grupo",
+      "valor": 25000,
+      "cat": "Comida",
+      "tipo": "personal",
+      "bolsillo": "efectivo",
+      "fecha": "2026-08-06",
+      "u": 1786027500000
+    },
+    {
+      "id": "mt8s27uoiwvl",
+      "desc": "Domicilio Rappi",
+      "valor": 32000,
+      "cat": "Comida",
+      "tipo": "personal",
+      "bolsillo": "nequi_pareja",
+      "fecha": "2026-08-25",
+      "u": 1787669160000
+    },
+    {
+      "id": "mu5n83hcq9do",
+      "desc": "Tinto y empanada",
+      "valor": 15000,
+      "cat": "Comida",
+      "tipo": "personal",
+      "bolsillo": "efectivo",
+      "fecha": "2026-09-17",
+      "u": 1789656420000
+    },
+    {
+      "id": "mur2v5s0kb23",
+      "desc": "Cena",
+      "valor": 40000,
+      "cat": "Comida",
+      "tipo": "personal",
+      "bolsillo": "nequi",
+      "fecha": "2026-10-02",
+      "u": 1790952480000
+    },
+    {
+      "id": "mrtcbeqo9u0v",
+      "desc": "Taxi",
+      "valor": 12000,
+      "cat": "Transporte",
+      "tipo": "personal",
+      "bolsillo": "efectivo",
+      "fecha": "2026-07-20",
+      "u": 1784558940000
+    },
+    {
+      "id": "msys4edcrv67",
+      "desc": "Uber al aeropuerto",
+      "valor": 20000,
+      "cat": "Transporte",
+      "tipo": "personal",
+      "bolsillo": "nequi",
+      "fecha": "2026-08-18",
+      "u": 1787064600000
+    },
+    {
+      "id": "muiibwo0jrbd",
+      "desc": "Metro y bus",
+      "valor": 8000,
+      "cat": "Transporte",
+      "tipo": "personal",
+      "bolsillo": "efectivo",
+      "fecha": "2026-09-26",
+      "u": 1790434260000
+    },
+    {
+      "id": "mskhsgaopzt1",
+      "desc": "Internet",
+      "valor": 95000,
+      "cat": "Servicios",
+      "tipo": "personal",
+      "bolsillo": "nequi",
+      "fecha": "2026-08-08",
+      "u": 1786200720000,
+      "fondo": "mta3pr40k95z"
+    },
+    {
+      "id": "mtssh59cklq9",
+      "desc": "Plan de celular",
+      "valor": 60000,
+      "cat": "Servicios",
+      "tipo": "personal",
+      "bolsillo": "nequi",
+      "fecha": "2026-09-08",
+      "u": 1788879180000
+    },
+    {
+      "id": "msbx7ww0j7xa",
+      "desc": "Cine",
+      "valor": 35000,
+      "cat": "Entretenimiento",
+      "tipo": "personal",
+      "bolsillo": "efectivo",
+      "fecha": "2026-08-02",
+      "u": 1785682440000
+    },
+    {
+      "id": "mtfxl1uocdtu",
+      "desc": "Netflix",
+      "valor": 15900,
+      "cat": "Entretenimiento",
+      "tipo": "personal",
+      "bolsillo": "nequi",
+      "fecha": "2026-08-30",
+      "u": 1788101700000
+    },
+    {
+      "id": "mtzxs9hcuygt",
+      "desc": "Zapatos para mí",
+      "valor": 120000,
+      "cat": "Personal",
+      "tipo": "personal",
+      "bolsillo": "nequi",
+      "fecha": "2026-09-13",
+      "u": 1789311360000
+    }
+  ],
+  "ingresos": [
+    {
+      "id": "ms3cons0esfy",
+      "desc": "Sueldo julio",
+      "valor": 1300000,
+      "bolsillo": "nequi",
+      "fecha": "2026-07-27",
+      "u": 1785164220000
+    },
+    {
+      "id": "mt32q8qog6pp",
+      "desc": "Regalo de cumpleaños",
+      "valor": 150000,
+      "bolsillo": "efectivo",
+      "fecha": "2026-08-21",
+      "u": 1787324280000
+    },
+    {
+      "id": "muh36cdcizi7",
+      "desc": "Sueldo septiembre",
+      "valor": 1300000,
+      "bolsillo": "nequi",
+      "fecha": "2026-09-25",
+      "u": 1790348340000
+    }
+  ],
+  "cobros": [
+    {
+      "id": "mtu86000kozt",
+      "tel": "3001234567",
+      "compromiso": "2026-10-15",
+      "notas": "Préstamo para el arriendo",
+      "nombre": "Camilo Restrepo",
+      "total": 300000,
+      "pagado": 0,
+      "bolsillo": "nequi",
+      "fecha": "2026-09-09",
+      "u": 1788966000000
+    },
+    {
+      "id": "mtd2yclc1ajw",
+      "tel": "3109876543",
+      "compromiso": "2026-10-02",
+      "notas": "MacBook Air M1",
+      "nombre": "Laura Giraldo",
+      "total": 1000000,
+      "pagado": 0,
+      "bolsillo": "",
+      "itemId": "mtd19wo0t04q",
+      "fecha": "2026-08-28",
+      "u": 1787929320000
+    },
+    {
+      "id": "mtoil0tcky85",
+      "tel": "3205551234",
+      "compromiso": "2026-10-05",
+      "notas": "Nintendo Switch OLED",
+      "nombre": "Sebastián Mora",
+      "total": 350000,
+      "pagado": 0,
+      "bolsillo": "",
+      "itemId": "mtogxv6orhlb",
+      "fecha": "2026-09-05",
+      "u": 1788620700000
+    },
+    {
+      "id": "mshng1eott5g",
+      "tel": "3157778899",
+      "compromiso": "",
+      "notas": "Préstamo corto",
+      "nombre": "Don Hernán",
+      "total": 150000,
+      "pagado": 50000,
+      "bolsillo": "efectivo",
+      "fecha": "2026-08-06",
+      "u": 1786028820000
+    }
+  ],
+  "abonos": [
+    {
+      "id": "muiiormo0c5h",
+      "cobroId": "mtu86000kozt",
+      "monto": 100000,
+      "bolsillo": "nequi",
+      "fecha": "2026-09-26",
+      "u": 1790434860000
+    },
+    {
+      "id": "mu2swyw0u6tv",
+      "cobroId": "mtd2yclc1ajw",
+      "monto": 300000,
+      "bolsillo": "nequi",
+      "fecha": "2026-09-15",
+      "u": 1789484580000
+    },
+    {
+      "id": "mujy8h6oq35b",
+      "cobroId": "mtd2yclc1ajw",
+      "monto": 200000,
+      "bolsillo": "efectivo",
+      "fecha": "2026-09-27",
+      "u": 1790521440000
+    },
+    {
+      "id": "muh3fcg0j33h",
+      "cobroId": "mtoil0tcky85",
+      "monto": 100000,
+      "bolsillo": "nequi",
+      "fecha": "2026-09-25",
+      "u": 1790348760000
+    },
+    {
+      "id": "msvxvudctm5j",
+      "cobroId": "mshng1eott5g",
+      "monto": 60000,
+      "bolsillo": "efectivo",
+      "fecha": "2026-08-16",
+      "u": 1786892880000
+    },
+    {
+      "id": "mt8svso0yng6",
+      "cobroId": "mshng1eott5g",
+      "monto": 40000,
+      "bolsillo": "efectivo",
+      "fecha": "2026-08-25",
+      "u": 1787670540000
+    }
+  ],
+  "transfers": [
+    {
+      "id": "mrrxmkaolk6s",
+      "from": "nequi",
+      "to": "efectivo",
+      "monto": 200000,
+      "fecha": "2026-07-19",
+      "u": 1784473800000
+    },
+    {
+      "id": "mt4imt9cqzfv",
+      "from": "nequi",
+      "to": "efectivo",
+      "monto": 150000,
+      "fecha": "2026-08-22",
+      "u": 1787411460000
+    },
+    {
+      "id": "mubdvnk09jv9",
+      "from": "efectivo",
+      "to": "nequi",
+      "monto": 100000,
+      "fecha": "2026-09-21",
+      "u": 1790003520000
+    }
+  ],
+  "ajustes": [
+    {
+      "id": "muo90r1c38mu",
+      "bolsillo": "nequi",
+      "delta": -4200,
+      "fecha": "2026-09-30",
+      "nota": "Cuadre con el saldo real de Nequi",
+      "u": 1790781420000
+    }
+  ],
+  "pend": [
+    {
+      "id": "pmuub7otcbrsu",
+      "raw": "Enviaste $12.000 a SERVIENTREGA",
+      "monto": 12000,
+      "dir": "out",
+      "quien": "SERVIENTREGA",
+      "fecha": "2026-10-04",
+      "bolsillo": "nequi",
+      "u": 1791147900000
+    },
+    {
+      "id": "pmuugr0qo56hl",
+      "raw": "Recibiste $85.000 de PEDRO GOMEZ",
+      "monto": 85000,
+      "dir": "in",
+      "quien": "PEDRO GOMEZ",
+      "fecha": "2026-10-04",
+      "bolsillo": "nequi",
+      "u": 1791157200000
+    },
+    {
+      "id": "pmuv7m3k0dep1",
+      "raw": "Pagaste $15.900 en NETFLIX",
+      "monto": 15900,
+      "dir": "out",
+      "quien": "NETFLIX",
+      "fecha": "2026-10-05",
+      "bolsillo": "nequi",
+      "u": 1791202320000
+    }
+  ],
+  "bolsillos": [
+    {
+      "id": "efectivo",
+      "nombre": "Efectivo",
+      "ini": 450000,
+      "alias": [
+        "efectivo",
+        "cash",
+        "fisico",
+        "billete",
+        "plata en mano",
+        "en mano"
+      ],
+      "iniFondos": {
+        "negocio": 300000
+      },
+      "u": 1783432800000
+    },
+    {
+      "id": "nequi",
+      "nombre": "Nequi",
+      "ini": 4000000,
+      "alias": [
+        "nequi",
+        "mi nequi",
+        "neki",
+        "nequy"
+      ],
+      "iniFondos": {
+        "negocio": 3500000
+      },
+      "u": 1783432800001
+    },
+    {
+      "id": "nequi_pareja",
+      "nombre": "Nequi pareja",
+      "ini": 250000,
+      "alias": [
+        "nequi de mi pareja",
+        "pareja",
+        "mi novia",
+        "mi esposa",
+        "mi mujer",
+        "mi amor",
+        "de ella"
+      ],
+      "u": 1783432800002
+    }
+  ],
+  "reglas": [
+    {
+      "id": "servientrega",
+      "kind": "gasto",
+      "desc": "Envío Servientrega",
+      "cat": "Envíos",
+      "tipo": "negocio",
+      "u": 1788138000000
+    },
+    {
+      "id": "netflix",
+      "kind": "gasto",
+      "desc": "Netflix",
+      "cat": "Entretenimiento",
+      "tipo": "personal",
+      "u": 1788138000001
+    }
+  ],
+  "fondos": [
+    {
+      "id": "negocio",
+      "nombre": "Negocio",
+      "emoji": "💼",
+      "alias": [
+        "negocio",
+        "capital",
+        "del negocio",
+        "plata del negocio"
+      ],
+      "orden": 0,
+      "u": 1783432800003
+    },
+    {
+      "id": "personal",
+      "nombre": "Personal",
+      "emoji": "👤",
+      "alias": [
+        "personal",
+        "lo personal",
+        "mi plata",
+        "para mi"
+      ],
+      "orden": 1,
+      "u": 1783432800004
+    },
+    {
+      "id": "mta3pr40k95z",
+      "nombre": "Casa",
+      "emoji": "🏠",
+      "alias": [
+        "casa",
+        "arriendo",
+        "servicios"
+      ],
+      "meta": 900000,
+      "orden": 2,
+      "u": 1787749200000
+    },
+    {
+      "id": "mujtt0g0rb77",
+      "nombre": "Ahorro",
+      "emoji": "🐷",
+      "alias": [
+        "ahorro",
+        "alcancia"
+      ],
+      "orden": 3,
+      "u": 1790514000000
+    }
+  ],
+  "repartos": [
+    {
+      "id": "mshnnr6o55n7",
+      "from": "personal",
+      "to": "negocio",
+      "monto": 1000000,
+      "fecha": "2026-08-06",
+      "nota": "Metí 1M al negocio",
+      "u": 1786029180000
+    },
+    {
+      "id": "mta8i2tcxy2p",
+      "from": "personal",
+      "to": "mta3pr40k95z",
+      "monto": 300000,
+      "fecha": "2026-08-26",
+      "nota": "Aparté para el arriendo",
+      "u": 1787757240000
+    },
+    {
+      "id": "muh3qx40ohhz",
+      "from": "personal",
+      "to": "mta3pr40k95z",
+      "monto": 300000,
+      "fecha": "2026-09-25",
+      "nota": "Aparté para el arriendo",
+      "u": 1790349300000
+    },
+    {
+      "id": "mujynwqokaht",
+      "from": "personal",
+      "to": "mujtt0g0rb77",
+      "monto": 200000,
+      "fecha": "2026-09-27",
+      "nota": "Primer ahorro",
+      "u": 1790522160000
+    }
+  ],
+  "contactos": [],
+  "topes": [],
+  "pedidos": []
+}

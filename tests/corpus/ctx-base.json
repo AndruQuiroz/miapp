@@ -1,0 +1,38 @@
+{
+  "bolsillos": [
+    {"id":"efectivo","nombre":"Efectivo","alias":["efectivo","cash","fisico","billete","plata en mano","en mano"]},
+    {"id":"nequi","nombre":"Nequi","alias":["nequi","mi nequi","neki","nequy"]},
+    {"id":"nequi_pareja","nombre":"Nequi pareja","alias":["nequi de mi pareja","pareja","mi novia","mi esposa","mi mujer","mi amor","de ella"]}
+  ],
+  "fondos": [
+    {"id":"negocio","nombre":"Negocio","emoji":"💼","alias":["negocio","capital","del negocio","plata del negocio"]},
+    {"id":"personal","nombre":"Personal","emoji":"👤","alias":["personal","lo personal","mi plata","para mi"]},
+    {"id":"arriendo","nombre":"Arriendo","emoji":"🏠","alias":["arriendo","la renta"]},
+    {"id":"ahorro","nombre":"Ahorro","emoji":"🐷","alias":["ahorro","ahorros","el chanchito"]}
+  ],
+  "stock": [
+    {"id":"i15p","desc":"iPhone 15 Pro 256GB","cat":"Celulares"},
+    {"id":"i13","desc":"iPhone 13 128GB","cat":"Celulares"},
+    {"id":"i16pm","desc":"iPhone 16 Pro Max","cat":"Celulares"},
+    {"id":"i11","desc":"iPhone 11 64GB","cat":"Celulares"},
+    {"id":"s23","desc":"Samsung Galaxy S23","cat":"Celulares"},
+    {"id":"ps5","desc":"PS5 Slim","cat":"Consolas"},
+    {"id":"sw","desc":"Nintendo Switch OLED","cat":"Consolas"},
+    {"id":"xbox","desc":"Xbox Series S","cat":"Consolas"},
+    {"id":"mba","desc":"MacBook Air M1","cat":"Computadores"},
+    {"id":"jordan","desc":"Tenis Jordan 4 Retro","cat":"Calzado"},
+    {"id":"af1","desc":"Tenis Nike Air Force 1","cat":"Calzado"},
+    {"id":"nmax","desc":"Moto Yamaha NMAX 2022","cat":"Moto/Auto"},
+    {"id":"buzo","desc":"Buzo Essentials negro","cat":"Ropa"},
+    {"id":"airpods","desc":"AirPods Pro 2","cat":"Accesorios"}
+  ],
+  "cobros": [
+    {"id":"cb-jp","nombre":"Juan Pablo"},
+    {"id":"cb-mateo","nombre":"Mateo"},
+    {"id":"cb-rosa","nombre":"Doña Rosa"},
+    {"id":"cb-camilo","nombre":"Camilo Restrepo"},
+    {"id":"cb-vale","nombre":"Valentina"},
+    {"id":"cb-mono","nombre":"El Mono"}
+  ],
+  "reglas": []
+}

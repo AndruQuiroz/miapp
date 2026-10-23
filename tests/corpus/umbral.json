@@ -1,0 +1,8 @@
+{
+  "global": 99,
+  "nota": "Porcentaje mínimo de frases de frases.json totalmente correctas (score.js). Medido 39.5% el 2026-10-06 (ronda 4b: 621 casos, incluye bolsillos con alias, apartados y repartos de §13) con app/quick.js de la ronda 3. Súbelo cada vez que el parser mejore; nunca lo bajes.",
+  "frases2": 99,
+  "nota_frases2": "Mínimo para frases2.json (226 casos, grupos débiles: fondo, multi, ingreso, gastos, compra, ruido). Medido 81.0% el 2026-10-06 con el parser reescrito por el lead. Súbelo cuando mejore; nunca lo bajes.",
+  "frases3": 95,
+  "nota_frases3": "Mínimo para frases3.json (294 casos, validación ciega de todos los grupos con formas nuevas: jerga, orden distinto, notas de voz, dictado, abreviaturas). Medido 66.0% el 2026-10-06. Súbelo cuando mejore; nunca lo bajes."
+}

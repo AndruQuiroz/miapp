@@ -1,0 +1,247 @@
+[
+  {
+    "text": "Recibiste $50.000 de JUAN PEREZ",
+    "esperado": { "monto": 50000, "dir": "in", "quien": "JUAN PEREZ" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Forma más probable del push de plata recibida. Nequi usa 'recibiste/enviaste' en su propio vocabulario (https://ayuda.nequi.com.co/hc/es/articles/38204536116109--C%C3%B3mo-ver-el-resumen-de-mi-plata-en-Nequi)."
+  },
+  {
+    "text": "Nequi Recibiste $1.200.000 de MARIA FERNANDA LOPEZ GARCIA",
+    "esperado": { "monto": 1200000, "dir": "in", "quien": "MARIA FERNANDA LOPEZ GARCIA" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Título 'Nequi' + texto, tal como lo manda MacroDroid (título + texto). Monto grande y nombre largo."
+  },
+  {
+    "text": "Recibiste $50.000 de Juan Pérez",
+    "esperado": { "monto": 50000, "dir": "in", "quien": "Juan Pérez" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Nombre en formato título con tilde."
+  },
+  {
+    "text": "¡Te llegó plata! JUAN PEREZ te envió $50.000",
+    "esperado": { "monto": 50000, "dir": "in", "quien": "JUAN PEREZ" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Variante con el nombre ANTES del verbo ('X te envió $Y'): el regex de quien (a|de|en|desde|para + nombre) no la cubre."
+  },
+  {
+    "text": "Plata recibida: $75.000 de ANA RODRIGUEZ",
+    "esperado": { "monto": 75000, "dir": "in", "quien": "ANA RODRIGUEZ" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Variante con participio ('recibida'), no con 'recibiste'."
+  },
+  {
+    "text": "Recibiste $50.000 de JUAN PEREZ el 05/10/2026 a las 14:32",
+    "esperado": { "monto": 50000, "dir": "in", "quien": "JUAN PEREZ" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Con fecha y hora pegadas al nombre (los comprobantes de Nequi traen fecha/hora)."
+  },
+  {
+    "text": "Recibiste $50.000 de JUAN PEREZ. Tu saldo ahora es $170.000",
+    "esperado": { "monto": 50000, "dir": "in", "quien": "JUAN PEREZ" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Por si algún día el push trae el saldo: debe ganar el primer monto, no el saldo."
+  },
+  {
+    "text": "Recibiste $1.250.000,50 de JUAN PEREZ",
+    "esperado": { "monto": 1250000, "dir": "in", "quien": "JUAN PEREZ" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Monto con decimales (coma). Nequi normalmente muestra COP sin decimales; es solo robustez."
+  },
+  {
+    "text": "Recibiste $85.000 por Bre-B de CARLOS RUIZ",
+    "esperado": { "monto": 85000, "dir": "in", "quien": "CARLOS RUIZ" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Bre-B reemplazó a Transfiya en Nequi; llega al instante sin aceptar y 'todos los movimientos Bre-B generan notificación' (https://ayuda.nequi.com.co/hc/es/articles/33998962907021-Todo-lo-que-necesitas-saber-sobre-Bre-B-en-Nequi). El texto exacto es una suposición."
+  },
+  {
+    "text": "Te llegaron $120.000 por Bre-B de DANIEL TORRES",
+    "esperado": { "monto": 120000, "dir": "in", "quien": "DANIEL TORRES" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Otra redacción posible para Bre-B recibido."
+  },
+  {
+    "text": "Recargaste $200.000 en PTM",
+    "esperado": { "monto": 200000, "dir": "in", "quien": "PTM" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Recarga en efectivo en corresponsal (PTM / Puntored / Punto Red). En la app esto se clasifica como 'Mover' (Efectivo a Nequi). Etiquetas 'Recarga PTM / corresponsal / Punto Red' en https://ayuda.nequi.com.co/hc/es/articles/36679205172877--Qu%C3%A9-hacer-si-tengo-ajustes-en-los-movimientos-de-mi-Nequi"
+  },
+  {
+    "text": "Recarga exitosa de $300.000 desde Bancolombia",
+    "esperado": { "monto": 300000, "dir": "in", "quien": "Bancolombia" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Recarga desde cuenta propia en Bancolombia (también existe 'Plata al Toque', https://ayuda.nequi.com.co/hc/es/articles/34693474327053--C%C3%B3mo-recargar-plata-en-Nequi). La app debería ofrecerlo como 'Mover'."
+  },
+  {
+    "text": "Te enviaron $40.000 desde Bancolombia",
+    "esperado": { "monto": 40000, "dir": "in", "quien": "Bancolombia" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Entrada de otro banco (antes Transfiya, ahora Bre-B / PSE)."
+  },
+  {
+    "text": "Enviaste $20.000 a MARIA LOPEZ",
+    "esperado": { "monto": 20000, "dir": "out", "quien": "MARIA LOPEZ" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Forma más probable del push de envío a otro Nequi."
+  },
+  {
+    "text": "Nequi Enviaste $9.900 a Tienda D1",
+    "esperado": { "monto": 9900, "dir": "out", "quien": "Tienda D1" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Título + texto, destinatario en formato título con dígito."
+  },
+  {
+    "text": "Envío exitoso por $20.000 a MARIA LOPEZ",
+    "esperado": { "monto": 20000, "dir": "out", "quien": "MARIA LOPEZ" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Variante sin 'enviaste' (usa 'envío'); el regex de dir 'out' no la cubre."
+  },
+  {
+    "text": "Enviaste $60.000 por Bre-B a LUIS GOMEZ",
+    "esperado": { "monto": 60000, "dir": "out", "quien": "LUIS GOMEZ" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Envío por Bre-B a una persona."
+  },
+  {
+    "text": "Enviaste $60.000 a la llave @luisgomez",
+    "esperado": { "monto": 60000, "dir": "out", "quien": "@luisgomez" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Bre-B por llave (celular, documento, correo o alfanumérica @usuario): el destino puede ser una llave y no un nombre."
+  },
+  {
+    "text": "Enviaste $20.000 a 3001234567",
+    "esperado": { "monto": 20000, "dir": "out", "quien": "3001234567" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Destino como número de celular (sin nombre)."
+  },
+  {
+    "text": "Pagaste $35.600 en RAPPI",
+    "esperado": { "monto": 35600, "dir": "out", "quien": "RAPPI" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Pago en comercio / app."
+  },
+  {
+    "text": "Pagaste $12.000 a TIENDA LA ESQUINA con QR",
+    "esperado": { "monto": 12000, "dir": "out", "quien": "TIENDA LA ESQUINA" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Pago con QR a un negocio."
+  },
+  {
+    "text": "Pago exitoso: $18.500 en PANADERIA EL TRIGAL",
+    "esperado": { "monto": 18500, "dir": "out", "quien": "PANADERIA EL TRIGAL" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Variante 'Pago exitoso'."
+  },
+  {
+    "text": "Compra en MERCADOLIBRE por $89.900 con tu Nequi",
+    "esperado": { "monto": 89900, "dir": "out", "quien": "MERCADOLIBRE" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Compra en línea."
+  },
+  {
+    "text": "Pago automático de $29.900 a SPOTIFY",
+    "esperado": { "monto": 29900, "dir": "out", "quien": "SPOTIFY" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Pago automático/suscripción (el push de aprobación trae botones aceptar/rechazar: https://ayuda.nequi.com.co/hc/es/articles/35211217114125--C%C3%B3mo-acepto-un-pago-autom%C3%A1tico-en-Nequi)."
+  },
+  {
+    "text": "Se descontaron $4.900 por tu suscripción a NETFLIX",
+    "esperado": { "monto": 4900, "dir": "out", "quien": "NETFLIX" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Cobro por suscripción."
+  },
+  {
+    "text": "Retiro en cajero Bancolombia por $200.000",
+    "esperado": { "monto": 200000, "dir": "out", "quien": "cajero Bancolombia" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Retiro en cajero. En la app debería ofrecerse como 'Retiro / mover' (Nequi a Efectivo)."
+  },
+  {
+    "text": "Sacaste $100.000 en corresponsal Bancolombia",
+    "esperado": { "monto": 100000, "dir": "out", "quien": "corresponsal Bancolombia" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Basado en la etiqueta real de Movimientos 'corresponsal Bancolombia Sacaste en ...' (https://ayuda.nequi.com.co/hc/es/articles/36724214284685--C%C3%B3mo-identificar-retiros-de-Nequi-hechos-en-Corresponsal). Que el push use el mismo texto es una suposición."
+  },
+  {
+    "text": "Retiraste $50.000 en PTM",
+    "esperado": { "monto": 50000, "dir": "out", "quien": "PTM" },
+    "fuente": "inferido",
+    "tipo": "movimiento",
+    "nota": "Basado en la etiqueta real 'PTM Retiro en ...' / 'Puntored Retiro en ...' (mismo artículo de ayuda)."
+  },
+  {
+    "text": "CARLOS RUIZ te pidió $30.000",
+    "esperado": { "monto": 30000, "dir": "?", "quien": "CARLOS RUIZ" },
+    "fuente": "inferido",
+    "tipo": "no-movimiento",
+    "nota": "Solicitud de plata ('Pedir'): todavía no se movió nada; vive en la pestaña 'En Espera' de la campanita. Ideal: dir '?' para que el usuario decida (o ignorar)."
+  },
+  {
+    "text": "Tienes un pago pendiente de $45.000 en NETFLIX. Acéptalo o recházalo",
+    "esperado": { "monto": 45000, "dir": "?", "quien": "NETFLIX" },
+    "fuente": "inferido",
+    "tipo": "no-movimiento",
+    "nota": "Aprobación de pago automático / push de comercio: la plata aún no sale. Ideal: no marcarlo como 'out' todavía."
+  },
+  {
+    "text": "Gana hasta $5.000.000 con tu Nequi. Entra y participa",
+    "esperado": { "monto": 0, "dir": "?", "quien": "" },
+    "fuente": "inferido",
+    "tipo": "ruido",
+    "nota": "Push promocional (Nequi manda campañas). Ideal: NO crear movimiento por clasificar (monto 0)."
+  },
+  {
+    "text": "Aprovecha un descuento de $10.000 en tu próxima compra",
+    "esperado": { "monto": 0, "dir": "?", "quien": "" },
+    "fuente": "inferido",
+    "tipo": "ruido",
+    "nota": "Promo con monto en pesos: hoy se toma como movimiento por clasificar (falso positivo)."
+  },
+  {
+    "text": "Paga con tu Nequi y gana $5.000 de regalo. Compra hoy",
+    "esperado": { "monto": 0, "dir": "?", "quien": "" },
+    "fuente": "inferido",
+    "tipo": "ruido",
+    "nota": "Promo con palabras de salida ('paga', 'compra'): además del monto falso, el regex de dir 'out' la volvería salida."
+  },
+  {
+    "text": "Tu código de seguridad de Nequi es 482913",
+    "esperado": { "monto": 0, "dir": "?", "quien": "" },
+    "fuente": "inferido",
+    "tipo": "ruido",
+    "nota": "Código OTP: un número de 4+ dígitos sin '$' NO debe tomarse como monto. (En Android 15+ el contenido de notificaciones con OTP se oculta a apps como MacroDroid: https://www.androidauthority.com/android-15-sensitive-notifications-3416414)."
+  },
+  {
+    "text": "Tu código para sacar plata es 123456 y vence en 30 minutos",
+    "esperado": { "monto": 0, "dir": "?", "quien": "" },
+    "fuente": "inferido",
+    "tipo": "ruido",
+    "nota": "Código de retiro (se genera en la app 'Saca'; vale 30 minutos: https://ayuda.nequi.com.co/hc/es/articles/115001860791--C%C3%B3mo-sacar-plata-de-Nequi-en-efectivo). Si llegara como notificación no debe contarse como plata."
+  }
+]

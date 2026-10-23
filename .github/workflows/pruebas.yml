@@ -1,0 +1,65 @@
+name: Pruebas y publicar
+# Flujo: los cambios se suben a la rama "dev". Aquí se corren TODAS las pruebas.
+# Solo si pasan, "dev" se copia a "main" (lo que ve el celular) y, si cambió algo de Android, se arma la APK.
+# Si algo falla, main no se toca: el celular sigue con la última versión buena y GitHub avisa por correo.
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+  pages: write
+
+concurrency:
+  group: pruebas
+  cancel-in-progress: false
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar herramientas de prueba
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Correr las pruebas
+        run: |
+          set -o pipefail
+          npm run preparar
+          node --test 'tests/**/*.test.js' 'server/test/*.test.js' 2>&1 | tee pruebas.log
+          # que ninguna prueba se haya saltado en silencio (p. ej. si faltara el navegador)
+          SALT=$(grep -E '^# skipped' pruebas.log | awk '{print $3}')
+          echo "Saltadas: $SALT"
+          if [ "${SALT:-0}" != "0" ]; then echo "::error::Hay $SALT pruebas saltadas"; exit 1; fi
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "### Resultado de las pruebas"
+            grep -E '^# (tests|pass|fail|skipped|todo)' pruebas.log || echo "no se pudieron correr"
+            echo
+            grep -E '^not ok' pruebas.log | head -20 || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar (dev → main)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch -q origin main
+          ANDROID=$(git diff --name-only origin/main HEAD -- android/ | head -1)
+          git push origin HEAD:main
+          gh api -X POST "repos/${{ github.repository }}/pages/builds" >/dev/null || echo "Pages se publica solo"
+          if [ -n "$ANDROID" ]; then gh workflow run apk.yml --ref main; echo "Cambió Android: armando APK"; fi
