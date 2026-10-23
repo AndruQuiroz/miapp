@@ -44,7 +44,8 @@ jobs:
           # que ninguna prueba se haya saltado en silencio (p. ej. si faltara el navegador)
           SALT=$(grep -E '^# skipped' pruebas.log | awk '{print $3}')
           echo "Saltadas: $SALT"
-          grep -E '^\s+not ok' pruebas.log | head -10 | while read -r l; do echo "::error title=Prueba fallida::$l"; done
+          # cada prueba fallida (no las TODO conocidas) con su mensaje de error, visible en la página del run
+          awk '/^ +not ok/ && !/# TODO/ {t=$0; n=12; next} n>0 { if ($0 ~ /error:|message|Error|assert|expected|actual/) m=m" "$0; if (--n==0) {gsub(/::/,": ",m); print "::error title=Prueba fallida::" t " →" substr(m,1,1500); m=""} }' pruebas.log | head -10
           if [ "$FALLO" = "1" ]; then exit 1; fi
           if [ "${SALT:-0}" != "0" ]; then echo "::error::Hay $SALT pruebas saltadas"; exit 1; fi
 
