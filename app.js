@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════ */
 'use strict';
 
-const APP_VERSION = '3.8.1';
+const APP_VERSION = '3.9.0';
 const K_DB = 'miapp_db_v2', K_CFG = 'miapp_cfg';
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -2412,6 +2412,8 @@ const ACT = {
   waPedido: el => waPedido(el.dataset.id),
   publicar: el => openPublicar(el.dataset.id),
   publicarElegir: () => openPublicarElegir(),
+  resetAbrir: () => openReset(),
+  resetOk: () => doReset(),
   pubCopiar: () => { const t = $('#pubTxt'); if(t) copyText(t.value, 'el texto'); },
   editPedido: el => { const p = get('pedidos', el.dataset.id); if(p) openForm('pedido', Object.assign({}, p)); },
   pedidoCumplido: el => { const p = get('pedidos', el.dataset.id); if(!p) return; put('pedidos', Object.assign({}, p, {estado: 'cumplido'})); commit('✓ Pedido de ' + (p.cliente || p.modelo) + ' cumplido'); },
@@ -3652,8 +3654,9 @@ async function testCapture(){
   finally { b.disabled = !hasCloud(); b.textContent = '🧪 Probar captura'; }
 }
 
-function exportJSON(){
-  const name = 'miapp_' + today().replace(/-/g, '') + '.json';
+function exportJSON(antesDeBorrar){
+  const d = new Date();
+  const name = 'miapp_' + today().replace(/-/g, '') + (antesDeBorrar === true ? '_antes-de-borrar_' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0') : '') + '.json';
   if(NATIVO){
     let ok = false; try { ok = MiAppNativo.guardarArchivo(name, JSON.stringify(DB)); } catch(e){}
     return toast(ok ? '⬇️ Guardado en Descargas: ' + name : 'No pude guardar el respaldo', {err: !ok, ms: 5000});
@@ -3678,12 +3681,72 @@ function importFile(file){
     if(!j || typeof j !== 'object' || !COLS.some(c => Array.isArray(j[c]))) return toast('Ese archivo no es un respaldo de Mi App', {err: true});
     const n = COLS.reduce((a, c) => a + (Array.isArray(j[c]) ? j[c].length : 0), 0);
     DB = ensureSeeds(mergeDB(DB, j));   // une, no reemplaza: por id gana el más reciente
+    const rev = revivirDeRespaldo(j);
     UI.rev++;
     if(!CFG.onboarded){ CFG.onboarded = true; saveCfg(); }
-    commit('⬆️ Importado: ' + plural(n, 'registro') + ' unidos');
+    commit(rev ? '⬆️ Respaldo restaurado: ' + plural(rev, 'registro') + ' recuperados' : '⬆️ Importado: ' + plural(n, 'registro') + ' unidos');
   };
   fr.onerror = () => toast('No pude leer el archivo', {err: true});
   fr.readAsText(file);
+}
+
+/* ── Empezar de cero ──
+   No borra físicamente: marca cada registro como borrado ({del:1}) con la marca wipe, así el borrado viaja a la nube
+   y al otro celular (si se borrara de verdad, la nube lo devolvería en la próxima sync). Se conservan los bolsillos
+   (con saldo inicial en 0), los apartados, los topes y, si quieres, los contactos y lo aprendido de comercios.
+   El respaldo que se guarda antes sirve para deshacer: importarlo revive lo que borró este reinicio. */
+const RESET_SIEMPRE = ['items', 'gastos', 'ingresos', 'cobros', 'abonos', 'transfers', 'ajustes', 'pend', 'repartos', 'pedidos'];
+function resetCols(o){ return RESET_SIEMPRE.concat(o && o.contactos ? ['contactos'] : [], o && o.reglas ? ['reglas'] : []); }
+function resetCuenta(o){ return resetCols(o).reduce((a, c) => a + L(DB, c).length, 0); }
+function openReset(){
+  const n = resetCuenta({});
+  const body = `<p style="margin-bottom:10px">Se borran <b data-testid="reset-n">${plural(n, 'registro')}</b>: compras, ventas, gastos, ingresos, cobros, abonos, movimientos entre bolsillos, “por clasificar” y pedidos.</p>
+    <p class="hint" style="margin-bottom:10px">Se conservan tus bolsillos (con saldo en $0, luego te pregunto cuánto tienes hoy), los apartados, los topes, la conexión a la nube y la IA.</p>
+    <label class="ocrchk" style="margin-bottom:8px"><input type="checkbox" id="resetCont" data-testid="reset-contactos"> Borrar también los contactos (${L(DB, 'contactos').length})</label>
+    <label class="ocrchk" style="margin-bottom:12px"><input type="checkbox" id="resetReg" data-testid="reset-reglas"> Borrar también lo aprendido de comercios (${L(DB, 'reglas').length})</label>
+    <p class="hint" style="margin-bottom:6px">⬇️ Antes de borrar se guarda un respaldo en Descargas. Si te arrepientes: Más → Ajustes → Respaldo → Importar ese archivo y vuelve todo.</p>
+    <div class="fld"><label for="resetConf">Para confirmar escribe <b>BORRAR</b></label>
+    <input class="in" id="resetConf" data-testid="reset-conf" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="BORRAR"></div>
+    ${hasCloud() ? '<p class="hint">☁️ El borrado también se aplica en tu nube y en tu otro celular.</p>' : ''}`;
+  const foot = `<button type="button" class="btn b-gh" data-a="infoClose">Cancelar</button>
+    <button type="button" class="btn b-r" style="flex:1;padding:0 12px" id="resetOk" data-a="resetOk" data-testid="reset-ok" disabled>🗑️ Borrar todo</button>`;
+  openInfo({kind: 'reset'}, '🧹 Empezar de cero', body, foot);
+  const upd = () => {
+    const ok = $('#resetOk'), c = $('#resetConf');
+    if(ok && c) ok.disabled = c.value.trim().toUpperCase() !== 'BORRAR';
+    const nn = $('[data-testid="reset-n"]');
+    if(nn) nn.textContent = plural(resetCuenta({contactos: $('#resetCont') && $('#resetCont').checked, reglas: $('#resetReg') && $('#resetReg').checked}), 'registro');
+  };
+  ['resetConf', 'resetCont', 'resetReg'].forEach(id => { const el = $('#' + id); if(el){ el.addEventListener('input', upd); el.addEventListener('change', upd); } });
+}
+function doReset(){
+  const c = $('#resetConf');
+  if(!c || c.value.trim().toUpperCase() !== 'BORRAR') return;
+  const o = {contactos: !!($('#resetCont') && $('#resetCont').checked), reglas: !!($('#resetReg') && $('#resetReg').checked)};
+  exportJSON(true);                                   // respaldo antes de tocar nada
+  const wipe = Date.now();
+  let n = 0;
+  resetCols(o).forEach(col => L(DB, col).forEach(r => { put(col, Object.assign({}, r, {del: 1, wipe})); n++; }));
+  L(DB, 'bolsillos').forEach(p => { if(+p.ini || p.iniFondos){ const q = Object.assign({}, p, {ini: 0}); delete q.iniFondos; put('bolsillos', q); } });
+  closeInfo();
+  commit('🧹 Listo: ' + plural(n, 'registro') + ' borrados', {ms: 4500});
+  setView('inicio');
+  showOnb('saldos'); const e = $('#onbEfe'); if(e) e.focus();
+}
+/* importar un respaldo revive lo que borró "Empezar de cero" (si no, el borrado, más reciente, ganaría) */
+function revivirDeRespaldo(j){
+  let n = 0;
+  COLS.forEach(col => (Array.isArray(j[col]) ? j[col] : []).forEach(r => {
+    if(!r || r.id == null || r.del) return;
+    const cur = (DB[col] || []).find(x => x.id === r.id);
+    if(cur && cur.del && cur.wipe){ const o = Object.assign({}, r); delete o.u; put(col, o); n++; }
+  }));
+  // si era un respaldo de antes de borrar, también vuelven los saldos iniciales (el reinicio los dejó en 0)
+  if(n) (Array.isArray(j.bolsillos) ? j.bolsillos : []).forEach(r => {
+    const cur = r && (DB.bolsillos || []).find(x => x.id === r.id && !x.del);
+    if(cur && (+r.ini || 0) && !(+cur.ini || 0)) put('bolsillos', Object.assign({}, cur, {ini: r.ini}, r.iniFondos ? {iniFondos: r.iniFondos} : {}));
+  });
+  return n;
 }
 
 /* Bienvenida (§10.3): nunca pisa la nube */
@@ -3739,7 +3802,7 @@ Object.assign(ACT, {
     if(hasData()){ CFG.onboarded = true; saveCfg(); showOnb(''); return; }
     showOnb('saldos'); const e = $('#onbEfe'); if(e) e.focus();
   },
-  onbBack: () => showOnb('ask'),
+  onbBack: () => CFG.onboarded ? showOnb('') : showOnb('ask'),   // tras "Empezar de cero" no vuelve a la bienvenida
   onbOther: () => {
     CFG.onboarded = true; saveCfg();
     showOnb('');
